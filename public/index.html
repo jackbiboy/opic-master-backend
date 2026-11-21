@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
     <title>OPIc Master Studio — Ôn tập, Thi thử 15 câu & Lịch sử</title>
     <style>
       * {
@@ -28,10 +29,11 @@
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
         margin-bottom: 18px;
         flex-wrap: wrap;
+        align-items: center;
       }
       .nav-btn {
         flex: 1;
-        min-width: 180px;
+        min-width: 170px;
         padding: 12px 16px;
         border: none;
         border-radius: 8px;
@@ -76,7 +78,8 @@
       }
       select,
       textarea,
-      button {
+      button,
+      input {
         font-family: inherit;
         font-size: 14px;
         border-radius: 8px;
@@ -237,7 +240,6 @@
         margin-top: 12px;
       }
 
-      /* Survey & Exam Styles */
       .survey-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
@@ -325,7 +327,6 @@
         }
       }
 
-      /* History Styles */
       .day-header {
         display: flex;
         justify-content: space-between;
@@ -421,7 +422,7 @@
       <div class="status" id="pinErrorText" style="color: #dc2626"></div>
     </div>
 
-    <!-- TOÀN BỘ GIAO DIỆN CHÍNH (Ẩn cho tới khi xác thực xong) -->
+    <!-- TOÀN BỘ GIAO DIỆN CHÍNH -->
     <div id="appShell" class="hidden">
       <nav class="nav-bar">
         <button class="nav-btn active" data-view="practiceView">
@@ -432,6 +433,13 @@
         </button>
         <button class="nav-btn" data-view="historyView">
           📅 Lịch sử & Điểm theo ngày
+        </button>
+        <button
+          class="btn-danger-outline hidden"
+          id="btnLockApp"
+          style="padding: 10px 14px; font-size: 14px"
+        >
+          🔒 Khóa lại
         </button>
       </nav>
 
@@ -615,7 +623,6 @@
 
       <!-- ==================== VIEW 2: THI THỬ 12-15 CÂU ==================== -->
       <section id="mockExamView" class="hidden">
-        <!-- Màn hình 1: Background Survey & Self-Assessment -->
         <div class="card" id="surveyStep">
           <h1>📝 Khảo sát nền (Background Survey) & Tự đánh giá</h1>
           <div class="subtitle">
@@ -712,7 +719,6 @@
           <div class="status" id="surveyError" style="color: #dc2626"></div>
         </div>
 
-        <!-- Màn hình 2: Phòng thi giả lập -->
         <div class="card hidden" id="examRoomStep">
           <div
             style="
@@ -787,7 +793,6 @@
           </div>
         </div>
 
-        <!-- Màn hình 2.5: Điều chỉnh độ khó sau câu 7 -->
         <div class="card hidden" id="midTestStep">
           <h2>⚖️ Điều chỉnh độ khó giữa bài thi (Sau Câu 7)</h2>
           <p style="line-height: 1.6; color: #475569">
@@ -811,7 +816,6 @@
           </div>
         </div>
 
-        <!-- Màn hình 3: Kết quả tổng kết toàn bài thi -->
         <div class="card hidden" id="examResultStep">
           <div
             style="
@@ -878,7 +882,6 @@
               🔄 Làm mới
             </button>
           </div>
-
           <div
             class="scores-grid"
             id="historySummaryGrid"
@@ -905,10 +908,8 @@
           <div id="historyDetailBody" style="margin-top: 14px"></div>
         </div>
       </section>
-
-      <script src="/app.js"></script>
     </div>
-    <!-- Đóng #appShell -->
+
     <script src="/app.js"></script>
   </body>
 </html>

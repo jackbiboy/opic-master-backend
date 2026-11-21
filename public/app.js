@@ -22,7 +22,6 @@ window.fetch = async (url, options = {}) => {
 
   const res = await rawFetch(url, { ...options, headers });
 
-  // Nếu token hết hạn hoặc mã PIN trên server vừa bị đổi -> khóa lại ngay
   if (res.status === 401 && !url.startsWith("/api/auth/")) {
     localStorage.removeItem(AUTH_TOKEN_KEY);
     showLockScreen("Phiên đăng nhập đã hết hạn. Vui lòng nhập lại mã PIN.");
@@ -92,6 +91,7 @@ btnLockApp.addEventListener("click", () => {
   localStorage.removeItem(AUTH_TOKEN_KEY);
   showLockScreen("Đã khóa màn hình.");
 });
+
 // ==================== TIỆN ÍCH CHUNG & CHUYỂN TAB ====================
 const SCORE_LABELS_SPEAK = {
   taskCompletion: "Đáp ứng câu hỏi",
@@ -180,6 +180,8 @@ async function loadQuestions() {
     const res = await fetch("/api/questions");
     const data = await res.json();
     allQuestions = data.questions || [];
+    categoryFilter.innerHTML = '<option value="all">Tất cả các nhóm</option>';
+    topicFilter.innerHTML = '<option value="all">Tất cả chủ đề</option>';
     data.categories.forEach((c) =>
       categoryFilter.add(new Option(c.label, c.id)),
     );
@@ -630,8 +632,6 @@ btnExamNext.addEventListener("click", async () => {
   examAvaAudio.pause();
 
   const audioBlob = await stopExamRecordingAndGetBlob();
-
-  // Gửi câu hiện tại lên server chấm ngầm
   const formData = new FormData();
   formData.append("questionIndex", examState.currentIndex);
   if (audioBlob)
@@ -644,19 +644,16 @@ btnExamNext.addEventListener("click", async () => {
 
   const nextIdx = examState.currentIndex + 1;
 
-  // Sau câu 7 (index 6 -> nextIdx === 7): Hiện màn hình điều chỉnh độ khó giống thi thật
   if (nextIdx === 7) {
     showExamStep(midTestStep);
     return;
   }
 
-  // Nếu vừa hoàn thành câu cuối cùng -> Tổng kết
   if (nextIdx >= examState.totalQuestions) {
     await finalizeMockExam();
     return;
   }
 
-  // Lấy câu tiếp theo
   const res = await fetch(
     `/api/exam/${examState.sessionId}/question/${nextIdx}`,
   );
