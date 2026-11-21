@@ -1,3 +1,97 @@
+// ==================== BẢO MẬT PIN & TỰ ĐỘNG GỬI TOKEN ====================
+const AUTH_TOKEN_KEY = "opic_auth_token";
+const lockScreen = document.getElementById("lockScreen");
+const appShell = document.getElementById("appShell");
+const pinLoginForm = document.getElementById("pinLoginForm");
+const pinInput = document.getElementById("pinInput");
+const pinErrorText = document.getElementById("pinErrorText");
+const btnLockApp = document.getElementById("btnLockApp");
+
+let questionsLoaded = false;
+
+const rawFetch = window.fetch.bind(window);
+window.fetch = async (url, options = {}) => {
+  const isApiCall = typeof url === "string" && url.startsWith("/api/");
+  if (!isApiCall) return rawFetch(url, options);
+
+  const token = localStorage.getItem(AUTH_TOKEN_KEY);
+  const headers = new Headers(options.headers || {});
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const res = await rawFetch(url, { ...options, headers });
+
+  // Nếu token hết hạn hoặc mã PIN trên server vừa bị đổi -> khóa lại ngay
+  if (res.status === 401 && !url.startsWith("/api/auth/")) {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    showLockScreen("Phiên đăng nhập đã hết hạn. Vui lòng nhập lại mã PIN.");
+  }
+  return res;
+};
+
+function showLockScreen(msg = "") {
+  appShell.classList.add("hidden");
+  lockScreen.classList.remove("hidden");
+  pinErrorText.textContent = msg;
+  pinInput.value = "";
+  pinInput.focus();
+}
+
+function showAppShell(pinRequired) {
+  lockScreen.classList.add("hidden");
+  appShell.classList.remove("hidden");
+  btnLockApp.classList.toggle("hidden", !pinRequired);
+  if (!questionsLoaded) {
+    questionsLoaded = true;
+    loadQuestions();
+  }
+}
+
+async function initAuthAndApp() {
+  try {
+    const res = await fetch("/api/auth/status");
+    const data = await res.json();
+    if (data.authenticated) {
+      showAppShell(data.pinRequired);
+    } else {
+      showLockScreen();
+    }
+  } catch {
+    showLockScreen("Không kết nối được tới máy chủ.");
+  }
+}
+
+pinLoginForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("btnPinSubmit");
+  btn.disabled = true;
+  pinErrorText.textContent = "⏳ Đang kiểm tra...";
+
+  try {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin: pinInput.value }),
+    });
+    const json = await res.json();
+    if (!res.ok || json.status !== "success") {
+      throw new Error(json.message || "Mã PIN không đúng");
+    }
+
+    if (json.token) localStorage.setItem(AUTH_TOKEN_KEY, json.token);
+    showAppShell(true);
+  } catch (err) {
+    pinErrorText.textContent = "❌ " + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+btnLockApp.addEventListener("click", () => {
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+  showLockScreen("Đã khóa màn hình.");
+});
 // ==================== TIỆN ÍCH CHUNG & CHUYỂN TAB ====================
 const SCORE_LABELS_SPEAK = {
   taskCompletion: "Đáp ứng câu hỏi",
@@ -787,4 +881,4 @@ window.deleteHistory = async function (id) {
   await loadHistory();
 };
 
-loadQuestions();
+initAuthAndApp();

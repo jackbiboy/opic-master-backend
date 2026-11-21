@@ -24,6 +24,13 @@ import {
   getHistoryById,
   deleteHistoryById,
 } from "./modules/history/history.service.js";
+import {
+  isPinEnabled,
+  verifyPinWithRateLimit,
+  verifyAuthToken,
+  extractBearerToken,
+  requirePinAuth,
+} from "./modules/auth/auth.service.js";
 
 dotenv.config();
 await fs.mkdir("uploads", { recursive: true });
@@ -40,14 +47,39 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static("public"));
 
+// ===== CÁC ROUTE CÔNG KHAI (Health Check & Đăng nhập PIN) =====
 app.get("/api/health", (req, res) => {
   res.json({
     status: "ok",
     hasGeminiKey: Boolean(process.env.GEMINI_API_KEY),
     storage: process.env.MONGODB_URI ? "mongodb_atlas" : "local_json",
+    pinProtected: isPinEnabled(),
     timestamp: new Date().toISOString(),
   });
 });
+
+app.get("/api/auth/status", (req, res) => {
+  const pinRequired = isPinEnabled();
+  const token = extractBearerToken(req);
+  const authenticated = !pinRequired || verifyAuthToken(token);
+  res.json({ pinRequired, authenticated });
+});
+
+app.post("/api/auth/login", (req, res) => {
+  const clientIp =
+    req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || "global";
+  const result = verifyPinWithRateLimit(req.body?.pin, clientIp);
+
+  if (!result.ok) {
+    return res
+      .status(result.status)
+      .json({ status: "error", message: result.message });
+  }
+  res.json({ status: "success", token: result.token });
+});
+
+// ===== TỪ ĐÂY TRỞ XUỐNG: BẮT BUỘC PHẢI XÁC THỰC PIN (nếu đã cài APP_PIN) =====
+app.use("/api", requirePinAuth);
 
 // 1. Kho câu hỏi
 app.get("/api/questions", (req, res) => {
@@ -97,7 +129,6 @@ app.post("/api/grade", upload.single("audio"), async (req, res) => {
       category: category || "",
     });
 
-    // Tính điểm trung bình 5 tiêu chí và lưu vào lịch sử theo ngày
     const scoreVals = Object.values(result.scores || {}).filter(
       (v) => typeof v === "number",
     );
@@ -131,7 +162,7 @@ app.post("/api/grade", upload.single("audio"), async (req, res) => {
   }
 });
 
-// 4. API Thi thử 12-15 câu (Survey -> Thi -> Chấm ngầm -> Tổng kết)
+// 4. API Thi thử 12-15 câu
 app.post("/api/exam/start", (req, res) => {
   try {
     const data = createMockExamSession(req.body);

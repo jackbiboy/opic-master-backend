@@ -382,484 +382,533 @@
     </style>
   </head>
   <body>
-    <nav class="nav-bar">
-      <button class="nav-btn active" data-view="practiceView">
-        🎧 Luyện từng câu & Đọc mẫu
-      </button>
-      <button class="nav-btn" data-view="mockExamView">
-        📝 Thi thử OPIc (12-15 câu)
-      </button>
-      <button class="nav-btn" data-view="historyView">
-        📅 Lịch sử & Điểm theo ngày
-      </button>
-    </nav>
+    <!-- MÀN HÌNH KHÓA MÃ PIN -->
+    <div
+      id="lockScreen"
+      class="card hidden"
+      style="max-width: 420px; margin: 70px auto; text-align: center"
+    >
+      <div style="font-size: 44px; margin-bottom: 10px">🔐</div>
+      <h1 style="margin-bottom: 6px">OPIc Master Studio</h1>
+      <p class="subtitle">Nhập mật khẩu hoặc mã PIN cá nhân để vào ôn tập.</p>
 
-    <!-- ==================== VIEW 1: LUYỆN TỪNG CÂU ==================== -->
-    <section id="practiceView">
-      <div class="card">
-        <h1>🎧 OPIc Study Studio — Luyện tập cùng Ava</h1>
-        <div class="subtitle">
-          Mỗi lượt chấm ở đây cũng được tự động lưu vào Lịch sử theo ngày để bạn
-          theo dõi tiến bộ.
-        </div>
-
-        <div class="mode-tabs">
-          <button class="tab-btn active" data-mode="speaking">
-            💬 Chế độ 1: Trả lời câu hỏi OPIc (Tự nói)
-          </button>
-          <button class="tab-btn" data-mode="reading">
-            📖 Chế độ 2: Đọc theo văn bản (Check phát âm)
-          </button>
-        </div>
-
-        <div class="row">
-          <div>
-            <label for="categoryFilter">Nhóm câu hỏi OPIc:</label>
-            <select id="categoryFilter">
-              <option value="all">Tất cả các nhóm</option>
-            </select>
-          </div>
-          <div>
-            <label for="topicFilter">Chủ đề (Topic):</label>
-            <select id="topicFilter">
-              <option value="all">Tất cả chủ đề</option>
-            </select>
-          </div>
-        </div>
-
-        <label for="questionSelect">Chọn câu hỏi trong bộ lọc:</label>
-        <div style="display: flex; gap: 8px; flex-wrap: wrap">
-          <select
-            id="questionSelect"
-            style="flex: 1; min-width: 240px"
-          ></select>
-          <button class="btn-secondary" id="btnNextQuestion">
-            ➡️ Câu tiếp
-          </button>
-          <button class="btn-secondary" id="btnRandomQuestion">
-            🎲 Ngẫu nhiên
-          </button>
-        </div>
-
-        <div class="tips-box" id="tipsBox">
-          <strong>💡 Chiến thuật trả lời:</strong>
-          <span id="tipsText">Chọn một câu hỏi để xem gợi ý.</span>
-        </div>
-
-        <label for="textInput" style="margin-top: 14px"
-          >Nội dung câu hỏi / Văn bản tự nhập:</label
-        >
-        <textarea id="textInput"></textarea>
-
-        <div class="row">
-          <div>
-            <label for="voiceSelect">Giọng giám khảo Ava:</label>
-            <select id="voiceSelect">
-              <option value="en-US-AvaMultilingualNeural">
-                Ava Multilingual (Ấm áp, tự nhiên nhất)
-              </option>
-              <option value="en-US-AvaNeural">
-                Ava Standard (Rõ ràng, chuẩn Mỹ)
-              </option>
-            </select>
-          </div>
-          <div>
-            <label for="rateSelect">Tốc độ Ava đọc:</label>
-            <select id="rateSelect">
-              <option value="-20%">Chậm (0.8x)</option>
-              <option value="-10%">Hơi chậm (0.9x)</option>
-              <option value="0%" selected>Chuẩn tự nhiên (1.0x)</option>
-              <option value="+15%">Hơi nhanh (1.15x)</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="btn-group">
-          <button class="btn-primary" id="btnAvaSpeak">🔊 Nghe Ava đọc</button>
-          <button class="btn-secondary" id="btnBlurText">
-            👁️ Làm mờ/Hiện chữ
-          </button>
-          <button class="btn-warning" id="btnToggleTips">
-            💡 Ẩn/Hiện chiến thuật
-          </button>
-          <a
-            id="downloadAudioLink"
-            class="hidden"
-            download="ava-opic.mp3"
-            style="text-decoration: none"
-          >
-            <button type="button" class="btn-success">⬇️ Tải MP3</button>
-          </a>
-        </div>
-
-        <audio id="avaAudioPlayer" controls class="hidden"></audio>
-        <div class="status" id="ttsStatus"></div>
-      </div>
-
-      <div class="card">
-        <h2 id="recordCardTitle">🎙️ Thu âm câu trả lời OPIc của bạn</h2>
-        <div class="btn-group" style="margin-top: 0">
-          <button class="btn-record" id="btnRecord">🔴 Bắt đầu thu âm</button>
-          <button class="btn-stop" id="btnStop" disabled>
-            ⏹️ Dừng & Gửi AI chấm
-          </button>
-          <span
-            id="timer"
-            style="font-weight: 700; font-size: 18px; margin-left: 6px"
-            >00:00</span
-          >
-        </div>
-        <audio id="userAudioPlayback" controls class="hidden"></audio>
-        <div class="status" id="recordStatus">
-          Sẵn sàng. Nghe Ava hỏi xong bạn có thể bấm làm mờ chữ rồi trả lời.
-        </div>
-      </div>
-
-      <div class="card hidden" id="resultCard">
-        <div
+      <form id="pinLoginForm" style="margin-top: 16px">
+        <input
+          type="password"
+          id="pinInput"
+          placeholder="Nhập mã PIN / Mật khẩu..."
+          autocomplete="current-password"
           style="
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 10px;
-          "
-        >
-          <h2 style="margin: 0">📊 Kết quả đánh giá từ AI</h2>
-          <span class="badge" id="levelBadge">--</span>
-        </div>
-        <div class="scores-grid" id="scoresGrid"></div>
-        <h3>📝 Nội dung AI nghe được:</h3>
-        <p
-          id="transcriptText"
-          style="
-            background: #f8fafc;
-            padding: 12px;
+            width: 100%;
+            padding: 12px 14px;
+            font-size: 16px;
+            border: 1px solid #cbd5e1;
             border-radius: 8px;
-            line-height: 1.5;
+            text-align: center;
+            letter-spacing: 2px;
           "
-        ></p>
-        <h3>💬 Nhận xét & Lời khuyên:</h3>
-        <p id="feedbackText" style="line-height: 1.6"></p>
-        <h3 id="correctionsTitle">✏️ Chi tiết cần sửa:</h3>
-        <div id="correctionsList"></div>
-        <div
-          style="
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-top: 18px;
-            flex-wrap: wrap;
-            gap: 10px;
-          "
+          required
+        />
+        <button
+          type="submit"
+          class="btn-primary"
+          id="btnPinSubmit"
+          style="width: 100%; margin-top: 12px; padding: 12px"
         >
-          <h3 style="margin: 0" id="sampleTitle">🌟 Gợi ý nâng cấp:</h3>
-          <button
-            class="btn-primary"
-            id="btnAvaReadSample"
-            style="padding: 6px 12px; font-size: 13px"
-          >
-            🔊 Nghe Ava đọc đoạn này
-          </button>
-        </div>
-        <div
-          class="sample-box"
-          id="sampleAnswerText"
-          style="margin-top: 8px"
-        ></div>
-      </div>
-    </section>
+          🔓 Mở khóa vào học
+        </button>
+      </form>
+      <div class="status" id="pinErrorText" style="color: #dc2626"></div>
+    </div>
 
-    <!-- ==================== VIEW 2: THI THỬ 12-15 CÂU ==================== -->
-    <section id="mockExamView" class="hidden">
-      <!-- Màn hình 1: Background Survey & Self-Assessment -->
-      <div class="card" id="surveyStep">
-        <h1>📝 Khảo sát nền (Background Survey) & Tự đánh giá</h1>
-        <div class="subtitle">
-          Hệ thống sẽ dựa vào lựa chọn của bạn để bốc bộ đề thi 12 hoặc 15 câu
-          thích ứng giống hệt kỳ thi OPIc thật.
-        </div>
+    <!-- TOÀN BỘ GIAO DIỆN CHÍNH (Ẩn cho tới khi xác thực xong) -->
+    <div id="appShell" class="hidden">
+      <nav class="nav-bar">
+        <button class="nav-btn active" data-view="practiceView">
+          🎧 Luyện từng câu & Đọc mẫu
+        </button>
+        <button class="nav-btn" data-view="mockExamView">
+          📝 Thi thử OPIc (12-15 câu)
+        </button>
+        <button class="nav-btn" data-view="historyView">
+          📅 Lịch sử & Điểm theo ngày
+        </button>
+      </nav>
 
-        <div class="row">
-          <div>
-            <label for="surveyJob">1. Nghề nghiệp / Học vấn hiện tại:</label>
-            <select id="surveyJob">
-              <option value="office">Nhân viên văn phòng / Kỹ sư</option>
-              <option value="student">Sinh viên / Học sinh</option>
-              <option value="business">Kinh doanh tự do</option>
-              <option value="home">Hiện đang nghỉ / Nội trợ</option>
-            </select>
+      <!-- ==================== VIEW 1: LUYỆN TỪNG CÂU ==================== -->
+      <section id="practiceView">
+        <div class="card">
+          <h1>🎧 OPIc Study Studio — Luyện tập cùng Ava</h1>
+          <div class="subtitle">
+            Mỗi lượt chấm ở đây cũng được tự động lưu vào Lịch sử theo ngày để
+            bạn theo dõi tiến bộ.
           </div>
-          <div>
-            <label for="surveyHome">2. Nơi ở hiện tại:</label>
-            <select id="surveyHome">
-              <option value="apartment">Căn hộ / Chung cư (Apartment)</option>
-              <option value="house">Nhà riêng cùng gia đình</option>
-              <option value="dorm">Ký túc xá / Nhà trọ</option>
-            </select>
+
+          <div class="mode-tabs">
+            <button class="tab-btn active" data-mode="speaking">
+              💬 Chế độ 1: Trả lời câu hỏi OPIc (Tự nói)
+            </button>
+            <button class="tab-btn" data-mode="reading">
+              📖 Chế độ 2: Đọc theo văn bản (Check phát âm)
+            </button>
           </div>
-        </div>
 
-        <label style="margin-top: 10px"
-          >3. Chọn tối thiểu 3 chủ đề bạn yêu thích / thường làm trong đời
-          sống:</label
-        >
-        <div class="survey-grid" id="surveyTopicsGrid">
-          <label class="check-card"
-            ><input type="checkbox" value="park" checked /> 🌳 Đi công viên
-            (Parks)</label
-          >
-          <label class="check-card"
-            ><input type="checkbox" value="cafe" checked /> ☕ Quán Cafe / Ăn
-            uống</label
-          >
-          <label class="check-card"
-            ><input type="checkbox" value="travel" checked /> ✈️ Du lịch
-            (Travel)</label
-          >
-          <label class="check-card"
-            ><input type="checkbox" value="shopping" /> 🛍️ Mua sắm & Công
-            nghệ</label
-          >
-          <label class="check-card"
-            ><input type="checkbox" value="music_movie" /> 🎵 Âm nhạc & Phim
-            ảnh</label
-          >
-          <label class="check-card"
-            ><input type="checkbox" value="sports" /> 🏃 Thể thao & Tập
-            gym</label
-          >
-          <label class="check-card"
-            ><input type="checkbox" value="home" /> 🏠 Nhà ở & Hàng xóm</label
-          >
-          <label class="check-card"
-            ><input type="checkbox" value="work_school" /> 💼 Công việc / Trường
-            học</label
-          >
-        </div>
+          <div class="row">
+            <div>
+              <label for="categoryFilter">Nhóm câu hỏi OPIc:</label>
+              <select id="categoryFilter">
+                <option value="all">Tất cả các nhóm</option>
+              </select>
+            </div>
+            <div>
+              <label for="topicFilter">Chủ đề (Topic):</label>
+              <select id="topicFilter">
+                <option value="all">Tất cả chủ đề</option>
+              </select>
+            </div>
+          </div>
 
-        <label
-          >4. Self-Assessment — Bạn tự đánh giá khả năng nói tiếng Anh ở mức
-          nào?</label
-        >
-        <div id="selfAssessmentGroup">
-          <label class="level-option"
-            ><input type="radio" name="selfLevel" value="2" />
-            <strong>Level 1–2 (Cơ bản — Đề 12 câu):</strong> Nói được câu ngắn
-            về chủ đề quen thuộc hàng ngày.</label
-          >
-          <label class="level-option"
-            ><input type="radio" name="selfLevel" value="4" checked />
-            <strong>Level 3–4 (Trung cấp IM — Đề 15 câu):</strong> Kể được
-            chuyện quá khứ cơ bản, giao tiếp được hầu hết tình huống.</label
-          >
-          <label class="level-option"
-            ><input type="radio" name="selfLevel" value="6" />
-            <strong>Level 5–6 (Cao cấp IH/AL — Đề 15 câu):</strong> Nói trôi
-            chảy thành đoạn văn dài, bàn luận vấn đề xã hội & xử lý tình huống
-            tốt.</label
-          >
-        </div>
+          <label for="questionSelect">Chọn câu hỏi trong bộ lọc:</label>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap">
+            <select
+              id="questionSelect"
+              style="flex: 1; min-width: 240px"
+            ></select>
+            <button class="btn-secondary" id="btnNextQuestion">
+              ➡️ Câu tiếp
+            </button>
+            <button class="btn-secondary" id="btnRandomQuestion">
+              🎲 Ngẫu nhiên
+            </button>
+          </div>
 
-        <div class="btn-group">
-          <button class="btn-primary" id="btnStartMockExam">
-            🚀 Bắt đầu thi thử cùng Ava
-          </button>
-        </div>
-        <div class="status" id="surveyError" style="color: #dc2626"></div>
-      </div>
+          <div class="tips-box" id="tipsBox">
+            <strong>💡 Chiến thuật trả lời:</strong>
+            <span id="tipsText">Chọn một câu hỏi để xem gợi ý.</span>
+          </div>
 
-      <!-- Màn hình 2: Phòng thi giả lập -->
-      <div class="card hidden" id="examRoomStep">
-        <div
-          style="
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-          "
-        >
-          <strong id="examProgressLabel" style="font-size: 16px"
-            >Câu 1 / 15</strong
+          <label for="textInput" style="margin-top: 14px"
+            >Nội dung câu hỏi / Văn bản tự nhập:</label
           >
-          <span class="badge" id="examTimerBadge">00:00</span>
-        </div>
-        <div class="progress-wrap">
-          <div class="progress-fill" id="examProgressBar"></div>
-        </div>
+          <textarea id="textInput"></textarea>
 
-        <div class="ava-stage">
-          <div class="ava-avatar" id="avaExamAvatar">👩🏼‍💼</div>
-          <div style="flex: 1">
-            <div style="font-weight: 700; font-size: 17px">Giám khảo Ava</div>
-            <div
-              id="examAvaStatus"
-              style="color: #cbd5e1; font-size: 14px; margin-top: 4px"
+          <div class="row">
+            <div>
+              <label for="voiceSelect">Giọng giám khảo Ava:</label>
+              <select id="voiceSelect">
+                <option value="en-US-AvaMultilingualNeural">
+                  Ava Multilingual (Ấm áp, tự nhiên nhất)
+                </option>
+                <option value="en-US-AvaNeural">
+                  Ava Standard (Rõ ràng, chuẩn Mỹ)
+                </option>
+              </select>
+            </div>
+            <div>
+              <label for="rateSelect">Tốc độ Ava đọc:</label>
+              <select id="rateSelect">
+                <option value="-20%">Chậm (0.8x)</option>
+                <option value="-10%">Hơi chậm (0.9x)</option>
+                <option value="0%" selected>Chuẩn tự nhiên (1.0x)</option>
+                <option value="+15%">Hơi nhanh (1.15x)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="btn-group">
+            <button class="btn-primary" id="btnAvaSpeak">
+              🔊 Nghe Ava đọc
+            </button>
+            <button class="btn-secondary" id="btnBlurText">
+              👁️ Làm mờ/Hiện chữ
+            </button>
+            <button class="btn-warning" id="btnToggleTips">
+              💡 Ẩn/Hiện chiến thuật
+            </button>
+            <a
+              id="downloadAudioLink"
+              class="hidden"
+              download="ava-opic.mp3"
+              style="text-decoration: none"
             >
-              Đang chuẩn bị câu hỏi...
-            </div>
-            <div class="btn-group" style="margin-top: 10px">
-              <button
-                class="btn-secondary"
-                id="btnExamReplay"
-                style="padding: 7px 12px; font-size: 13px"
-              >
-                🔁 Nghe lại (Còn 1 lần)
-              </button>
-              <button
-                class="btn-warning"
-                id="btnExamShowText"
-                style="padding: 7px 12px; font-size: 13px"
-              >
-                👁️ Xem chữ (Nếu nghe không rõ)
-              </button>
-            </div>
+              <button type="button" class="btn-success">⬇️ Tải MP3</button>
+            </a>
+          </div>
+
+          <audio id="avaAudioPlayer" controls class="hidden"></audio>
+          <div class="status" id="ttsStatus"></div>
+        </div>
+
+        <div class="card">
+          <h2 id="recordCardTitle">🎙️ Thu âm câu trả lời OPIc của bạn</h2>
+          <div class="btn-group" style="margin-top: 0">
+            <button class="btn-record" id="btnRecord">🔴 Bắt đầu thu âm</button>
+            <button class="btn-stop" id="btnStop" disabled>
+              ⏹️ Dừng & Gửi AI chấm
+            </button>
+            <span
+              id="timer"
+              style="font-weight: 700; font-size: 18px; margin-left: 6px"
+              >00:00</span
+            >
+          </div>
+          <audio id="userAudioPlayback" controls class="hidden"></audio>
+          <div class="status" id="recordStatus">
+            Sẵn sàng. Nghe Ava hỏi xong bạn có thể bấm làm mờ chữ rồi trả lời.
           </div>
         </div>
 
-        <div
-          class="tips-box hidden"
-          id="examQuestionTextBox"
-          style="background: #f8fafc; border-color: #2563eb; color: #1e293b"
-        ></div>
-        <audio id="examAvaAudio" class="hidden"></audio>
-
-        <div
-          class="btn-group"
-          style="margin-top: 18px; justify-content: space-between"
-        >
-          <div style="display: flex; gap: 10px; flex-wrap: wrap">
-            <button class="btn-record" id="btnExamRecord">
-              🔴 Bắt đầu trả lời
-            </button>
-            <button class="btn-primary" id="btnExamNext" disabled>
-              ⏭️ Nộp & Sang câu tiếp
-            </button>
-          </div>
-          <button class="btn-danger-outline" id="btnExamAbort">
-            ✖️ Hủy bài thi
-          </button>
-        </div>
-        <div class="status" id="examRecordStatus">
-          Chờ Ava đọc xong câu hỏi rồi bấm "Bắt đầu trả lời".
-        </div>
-      </div>
-
-      <!-- Màn hình 2.5: Điều chỉnh độ khó sau câu 7 -->
-      <div class="card hidden" id="midTestStep">
-        <h2>⚖️ Điều chỉnh độ khó giữa bài thi (Sau Câu 7)</h2>
-        <p style="line-height: 1.6; color: #475569">
-          Giống như bài thi OPIc thật, bạn vừa hoàn thành 7 câu hỏi đầu tiên.
-          Bạn cảm thấy các câu hỏi vừa rồi như thế nào so với khả năng của mình?
-        </p>
-        <div
-          class="btn-group"
-          style="flex-direction: column; align-items: stretch"
-        >
-          <button class="btn-secondary" data-adjust="easier">
-            😅 Hơi khó — Cho nửa sau dễ hơn một chút
-          </button>
-          <button class="btn-primary" data-adjust="same">
-            👌 Vừa sức — Giữ nguyên mức độ hiện tại
-          </button>
-          <button class="btn-success" data-adjust="harder">
-            🔥 Hơi dễ — Tăng độ khó nửa sau lên
-          </button>
-        </div>
-      </div>
-
-      <!-- Màn hình 3: Kết quả tổng kết toàn bài thi -->
-      <div class="card hidden" id="examResultStep">
-        <div
-          style="
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 10px;
-          "
-        >
-          <h2 style="margin: 0">🏆 Kết quả Thi thử OPIc Toàn bài</h2>
-          <span class="badge" id="finalExamLevelBadge" style="font-size: 18px"
-            >--</span
+        <div class="card hidden" id="resultCard">
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              flex-wrap: wrap;
+              gap: 10px;
+            "
           >
-        </div>
-        <div class="scores-grid" id="finalExamScoresGrid"></div>
-
-        <h3>📋 Đánh giá tổng thể chuẩn ACTFL:</h3>
-        <p id="finalOverallFeedback" style="line-height: 1.6"></p>
-
-        <div class="row">
-          <div class="sample-box">
-            <strong>✅ Điểm mạnh:</strong><br /><span
-              id="finalStrengths"
-            ></span>
+            <h2 style="margin: 0">📊 Kết quả đánh giá từ AI</h2>
+            <span class="badge" id="levelBadge">--</span>
           </div>
-          <div class="correction" style="margin: 0">
-            <strong>⚠️ Điểm cần khắc phục:</strong><br /><span
-              id="finalWeaknesses"
-            ></span>
+          <div class="scores-grid" id="scoresGrid"></div>
+          <h3>📝 Nội dung AI nghe được:</h3>
+          <p
+            id="transcriptText"
+            style="
+              background: #f8fafc;
+              padding: 12px;
+              border-radius: 8px;
+              line-height: 1.5;
+            "
+          ></p>
+          <h3>💬 Nhận xét & Lời khuyên:</h3>
+          <p id="feedbackText" style="line-height: 1.6"></p>
+          <h3 id="correctionsTitle">✏️ Chi tiết cần sửa:</h3>
+          <div id="correctionsList"></div>
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-top: 18px;
+              flex-wrap: wrap;
+              gap: 10px;
+            "
+          >
+            <h3 style="margin: 0" id="sampleTitle">🌟 Gợi ý nâng cấp:</h3>
+            <button
+              class="btn-primary"
+              id="btnAvaReadSample"
+              style="padding: 6px 12px; font-size: 13px"
+            >
+              🔊 Nghe Ava đọc đoạn này
+            </button>
+          </div>
+          <div
+            class="sample-box"
+            id="sampleAnswerText"
+            style="margin-top: 8px"
+          ></div>
+        </div>
+      </section>
+
+      <!-- ==================== VIEW 2: THI THỬ 12-15 CÂU ==================== -->
+      <section id="mockExamView" class="hidden">
+        <!-- Màn hình 1: Background Survey & Self-Assessment -->
+        <div class="card" id="surveyStep">
+          <h1>📝 Khảo sát nền (Background Survey) & Tự đánh giá</h1>
+          <div class="subtitle">
+            Hệ thống sẽ dựa vào lựa chọn của bạn để bốc bộ đề thi 12 hoặc 15 câu
+            thích ứng giống hệt kỳ thi OPIc thật.
+          </div>
+
+          <div class="row">
+            <div>
+              <label for="surveyJob">1. Nghề nghiệp / Học vấn hiện tại:</label>
+              <select id="surveyJob">
+                <option value="office">Nhân viên văn phòng / Kỹ sư</option>
+                <option value="student">Sinh viên / Học sinh</option>
+                <option value="business">Kinh doanh tự do</option>
+                <option value="home">Hiện đang nghỉ / Nội trợ</option>
+              </select>
+            </div>
+            <div>
+              <label for="surveyHome">2. Nơi ở hiện tại:</label>
+              <select id="surveyHome">
+                <option value="apartment">Căn hộ / Chung cư (Apartment)</option>
+                <option value="house">Nhà riêng cùng gia đình</option>
+                <option value="dorm">Ký túc xá / Nhà trọ</option>
+              </select>
+            </div>
+          </div>
+
+          <label style="margin-top: 10px"
+            >3. Chọn tối thiểu 3 chủ đề bạn yêu thích / thường làm trong đời
+            sống:</label
+          >
+          <div class="survey-grid" id="surveyTopicsGrid">
+            <label class="check-card"
+              ><input type="checkbox" value="park" checked /> 🌳 Đi công viên
+              (Parks)</label
+            >
+            <label class="check-card"
+              ><input type="checkbox" value="cafe" checked /> ☕ Quán Cafe / Ăn
+              uống</label
+            >
+            <label class="check-card"
+              ><input type="checkbox" value="travel" checked /> ✈️ Du lịch
+              (Travel)</label
+            >
+            <label class="check-card"
+              ><input type="checkbox" value="shopping" /> 🛍️ Mua sắm & Công
+              nghệ</label
+            >
+            <label class="check-card"
+              ><input type="checkbox" value="music_movie" /> 🎵 Âm nhạc & Phim
+              ảnh</label
+            >
+            <label class="check-card"
+              ><input type="checkbox" value="sports" /> 🏃 Thể thao & Tập
+              gym</label
+            >
+            <label class="check-card"
+              ><input type="checkbox" value="home" /> 🏠 Nhà ở & Hàng xóm</label
+            >
+            <label class="check-card"
+              ><input type="checkbox" value="work_school" /> 💼 Công việc /
+              Trường học</label
+            >
+          </div>
+
+          <label
+            >4. Self-Assessment — Bạn tự đánh giá khả năng nói tiếng Anh ở mức
+            nào?</label
+          >
+          <div id="selfAssessmentGroup">
+            <label class="level-option"
+              ><input type="radio" name="selfLevel" value="2" />
+              <strong>Level 1–2 (Cơ bản — Đề 12 câu):</strong> Nói được câu ngắn
+              về chủ đề quen thuộc hàng ngày.</label
+            >
+            <label class="level-option"
+              ><input type="radio" name="selfLevel" value="4" checked />
+              <strong>Level 3–4 (Trung cấp IM — Đề 15 câu):</strong> Kể được
+              chuyện quá khứ cơ bản, giao tiếp được hầu hết tình huống.</label
+            >
+            <label class="level-option"
+              ><input type="radio" name="selfLevel" value="6" />
+              <strong>Level 5–6 (Cao cấp IH/AL — Đề 15 câu):</strong> Nói trôi
+              chảy thành đoạn văn dài, bàn luận vấn đề xã hội & xử lý tình huống
+              tốt.</label
+            >
+          </div>
+
+          <div class="btn-group">
+            <button class="btn-primary" id="btnStartMockExam">
+              🚀 Bắt đầu thi thử cùng Ava
+            </button>
+          </div>
+          <div class="status" id="surveyError" style="color: #dc2626"></div>
+        </div>
+
+        <!-- Màn hình 2: Phòng thi giả lập -->
+        <div class="card hidden" id="examRoomStep">
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+            "
+          >
+            <strong id="examProgressLabel" style="font-size: 16px"
+              >Câu 1 / 15</strong
+            >
+            <span class="badge" id="examTimerBadge">00:00</span>
+          </div>
+          <div class="progress-wrap">
+            <div class="progress-fill" id="examProgressBar"></div>
+          </div>
+
+          <div class="ava-stage">
+            <div class="ava-avatar" id="avaExamAvatar">👩🏼‍💼</div>
+            <div style="flex: 1">
+              <div style="font-weight: 700; font-size: 17px">Giám khảo Ava</div>
+              <div
+                id="examAvaStatus"
+                style="color: #cbd5e1; font-size: 14px; margin-top: 4px"
+              >
+                Đang chuẩn bị câu hỏi...
+              </div>
+              <div class="btn-group" style="margin-top: 10px">
+                <button
+                  class="btn-secondary"
+                  id="btnExamReplay"
+                  style="padding: 7px 12px; font-size: 13px"
+                >
+                  🔁 Nghe lại (Còn 1 lần)
+                </button>
+                <button
+                  class="btn-warning"
+                  id="btnExamShowText"
+                  style="padding: 7px 12px; font-size: 13px"
+                >
+                  👁️ Xem chữ (Nếu nghe không rõ)
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div
+            class="tips-box hidden"
+            id="examQuestionTextBox"
+            style="background: #f8fafc; border-color: #2563eb; color: #1e293b"
+          ></div>
+          <audio id="examAvaAudio" class="hidden"></audio>
+
+          <div
+            class="btn-group"
+            style="margin-top: 18px; justify-content: space-between"
+          >
+            <div style="display: flex; gap: 10px; flex-wrap: wrap">
+              <button class="btn-record" id="btnExamRecord">
+                🔴 Bắt đầu trả lời
+              </button>
+              <button class="btn-primary" id="btnExamNext" disabled>
+                ⏭️ Nộp & Sang câu tiếp
+              </button>
+            </div>
+            <button class="btn-danger-outline" id="btnExamAbort">
+              ✖️ Hủy bài thi
+            </button>
+          </div>
+          <div class="status" id="examRecordStatus">
+            Chờ Ava đọc xong câu hỏi rồi bấm "Bắt đầu trả lời".
           </div>
         </div>
 
-        <div class="tips-box">
-          <strong>🎯 Lộ trình ôn tiếp theo:</strong>
-          <span id="finalStudyPlan"></span>
+        <!-- Màn hình 2.5: Điều chỉnh độ khó sau câu 7 -->
+        <div class="card hidden" id="midTestStep">
+          <h2>⚖️ Điều chỉnh độ khó giữa bài thi (Sau Câu 7)</h2>
+          <p style="line-height: 1.6; color: #475569">
+            Giống như bài thi OPIc thật, bạn vừa hoàn thành 7 câu hỏi đầu tiên.
+            Bạn cảm thấy các câu hỏi vừa rồi như thế nào so với khả năng của
+            mình?
+          </p>
+          <div
+            class="btn-group"
+            style="flex-direction: column; align-items: stretch"
+          >
+            <button class="btn-secondary" data-adjust="easier">
+              😅 Hơi khó — Cho nửa sau dễ hơn một chút
+            </button>
+            <button class="btn-primary" data-adjust="same">
+              👌 Vừa sức — Giữ nguyên mức độ hiện tại
+            </button>
+            <button class="btn-success" data-adjust="harder">
+              🔥 Hơi dễ — Tăng độ khó nửa sau lên
+            </button>
+          </div>
         </div>
 
-        <h3 style="margin-top: 20px">🔍 Chi tiết từng câu đã trả lời:</h3>
-        <div id="finalExamBreakdown"></div>
+        <!-- Màn hình 3: Kết quả tổng kết toàn bài thi -->
+        <div class="card hidden" id="examResultStep">
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              flex-wrap: wrap;
+              gap: 10px;
+            "
+          >
+            <h2 style="margin: 0">🏆 Kết quả Thi thử OPIc Toàn bài</h2>
+            <span class="badge" id="finalExamLevelBadge" style="font-size: 18px"
+              >--</span
+            >
+          </div>
+          <div class="scores-grid" id="finalExamScoresGrid"></div>
 
-        <div class="btn-group" style="margin-top: 16px">
-          <button class="btn-primary" id="btnNewMockExam">
-            🔄 Làm bài thi mới
-          </button>
+          <h3>📋 Đánh giá tổng thể chuẩn ACTFL:</h3>
+          <p id="finalOverallFeedback" style="line-height: 1.6"></p>
+
+          <div class="row">
+            <div class="sample-box">
+              <strong>✅ Điểm mạnh:</strong><br /><span
+                id="finalStrengths"
+              ></span>
+            </div>
+            <div class="correction" style="margin: 0">
+              <strong>⚠️ Điểm cần khắc phục:</strong><br /><span
+                id="finalWeaknesses"
+              ></span>
+            </div>
+          </div>
+
+          <div class="tips-box">
+            <strong>🎯 Lộ trình ôn tiếp theo:</strong>
+            <span id="finalStudyPlan"></span>
+          </div>
+
+          <h3 style="margin-top: 20px">🔍 Chi tiết từng câu đã trả lời:</h3>
+          <div id="finalExamBreakdown"></div>
+
+          <div class="btn-group" style="margin-top: 16px">
+            <button class="btn-primary" id="btnNewMockExam">
+              🔄 Làm bài thi mới
+            </button>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <!-- ==================== VIEW 3: LỊCH SỬ & ĐIỂM THEO NGÀY ==================== -->
-    <section id="historyView" class="hidden">
-      <div class="card">
-        <div
-          style="
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 10px;
-          "
-        >
-          <h1 style="margin: 0">📅 Lịch sử Luyện tập & Điểm theo ngày</h1>
-          <button class="btn-secondary" id="btnRefreshHistory">
-            🔄 Làm mới
-          </button>
+      <!-- ==================== VIEW 3: LỊCH SỬ & ĐIỂM THEO NGÀY ==================== -->
+      <section id="historyView" class="hidden">
+        <div class="card">
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              flex-wrap: wrap;
+              gap: 10px;
+            "
+          >
+            <h1 style="margin: 0">📅 Lịch sử Luyện tập & Điểm theo ngày</h1>
+            <button class="btn-secondary" id="btnRefreshHistory">
+              🔄 Làm mới
+            </button>
+          </div>
+
+          <div
+            class="scores-grid"
+            id="historySummaryGrid"
+            style="margin-top: 16px"
+          ></div>
+          <div id="historyDaysContainer"></div>
         </div>
 
-        <div
-          class="scores-grid"
-          id="historySummaryGrid"
-          style="margin-top: 16px"
-        ></div>
-        <div id="historyDaysContainer"></div>
-      </div>
-
-      <div class="card hidden" id="historyDetailCard">
-        <div
-          style="
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-          "
-        >
-          <h2 id="historyDetailTitle" style="margin: 0">Chi tiết bài đã lưu</h2>
-          <button class="btn-secondary" id="btnCloseHistoryDetail">
-            ✖️ Đóng
-          </button>
+        <div class="card hidden" id="historyDetailCard">
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+            "
+          >
+            <h2 id="historyDetailTitle" style="margin: 0">
+              Chi tiết bài đã lưu
+            </h2>
+            <button class="btn-secondary" id="btnCloseHistoryDetail">
+              ✖️ Đóng
+            </button>
+          </div>
+          <div id="historyDetailBody" style="margin-top: 14px"></div>
         </div>
-        <div id="historyDetailBody" style="margin-top: 14px"></div>
-      </div>
-    </section>
+      </section>
 
+      <script src="/app.js"></script>
+    </div>
+    <!-- Đóng #appShell -->
     <script src="/app.js"></script>
   </body>
 </html>
