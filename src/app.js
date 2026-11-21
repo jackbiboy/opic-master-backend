@@ -44,6 +44,7 @@ app.get("/api/health", (req, res) => {
   res.json({
     status: "ok",
     hasGeminiKey: Boolean(process.env.GEMINI_API_KEY),
+    storage: process.env.MONGODB_URI ? "mongodb_atlas" : "local_json",
     timestamp: new Date().toISOString(),
   });
 });

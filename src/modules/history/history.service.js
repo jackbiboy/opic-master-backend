@@ -1,9 +1,39 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
+import { MongoClient } from "mongodb";
 
 const DATA_DIR = path.resolve("data");
 const HISTORY_FILE = path.join(DATA_DIR, "history.json");
+
+let historyCollection = null;
+let connectPromise = null;
+
+async function getMongoCollection() {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) return null;
+
+  if (historyCollection) return historyCollection;
+
+  if (!connectPromise) {
+    connectPromise = (async () => {
+      const client = new MongoClient(uri);
+      await client.connect();
+      const db = client.db(process.env.MONGODB_DB_NAME || "opic_master");
+      const col = db.collection("history");
+      await col.createIndex({ createdAt: -1 });
+      await col.createIndex({ id: 1 }, { unique: true });
+      historyCollection = col;
+      console.log("Da ket noi MongoDB Atlas thanh cong!");
+      return col;
+    })().catch((err) => {
+      connectPromise = null;
+      throw err;
+    });
+  }
+
+  return connectPromise;
+}
 
 async function ensureHistoryFile() {
   await fs.mkdir(DATA_DIR, { recursive: true });
@@ -14,7 +44,7 @@ async function ensureHistoryFile() {
   }
 }
 
-async function readAllHistory() {
+async function readLocalHistory() {
   await ensureHistoryFile();
   const raw = await fs.readFile(HISTORY_FILE, "utf-8");
   try {
@@ -25,13 +55,12 @@ async function readAllHistory() {
   }
 }
 
-async function writeAllHistory(items) {
+async function writeLocalHistory(items) {
   await ensureHistoryFile();
   await fs.writeFile(HISTORY_FILE, JSON.stringify(items, null, 2), "utf-8");
 }
 
 function getLocalDateKey(date = new Date()) {
-  // Lấy ngày YYYY-MM-DD theo múi giờ Việt Nam (+07:00)
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Ho_Chi_Minh",
     year: "numeric",
@@ -41,12 +70,10 @@ function getLocalDateKey(date = new Date()) {
 }
 
 /**
- * Lưu một bản ghi mới (luyện từng câu hoặc thi thử 12-15 câu)
+ * Lưu một bản ghi mới (ưu tiên MongoDB Atlas, fallback về file JSON nếu chưa cấu hình URI)
  */
 export async function saveHistoryEntry(entry) {
-  const list = await readAllHistory();
   const now = new Date();
-
   const newRecord = {
     id: crypto.randomUUID(),
     date: getLocalDateKey(now),
@@ -54,8 +81,15 @@ export async function saveHistoryEntry(entry) {
     ...entry,
   };
 
+  const col = await getMongoCollection();
+  if (col) {
+    await col.insertOne({ ...newRecord });
+    return newRecord;
+  }
+
+  const list = await readLocalHistory();
   list.unshift(newRecord);
-  await writeAllHistory(list);
+  await writeLocalHistory(list);
   return newRecord;
 }
 
@@ -63,7 +97,13 @@ export async function saveHistoryEntry(entry) {
  * Lấy danh sách lịch sử gom theo từng ngày + thống kê tổng quan
  */
 export async function getHistoryGroupedByDate() {
-  const list = await readAllHistory();
+  const col = await getMongoCollection();
+  const list = col
+    ? await col
+        .find({}, { projection: { _id: 0 } })
+        .sort({ createdAt: -1 })
+        .toArray()
+    : await readLocalHistory();
 
   const groupedMap = new Map();
   let totalScoreSum = 0;
@@ -110,14 +150,23 @@ export async function getHistoryGroupedByDate() {
 }
 
 export async function getHistoryById(id) {
-  const list = await readAllHistory();
+  const col = await getMongoCollection();
+  if (col) {
+    return await col.findOne({ id }, { projection: { _id: 0 } });
+  }
+  const list = await readLocalHistory();
   return list.find((item) => item.id === id) || null;
 }
 
 export async function deleteHistoryById(id) {
-  const list = await readAllHistory();
+  const col = await getMongoCollection();
+  if (col) {
+    const res = await col.deleteOne({ id });
+    return res.deletedCount > 0;
+  }
+  const list = await readLocalHistory();
   const nextList = list.filter((item) => item.id !== id);
   if (nextList.length === list.length) return false;
-  await writeAllHistory(nextList);
+  await writeLocalHistory(nextList);
   return true;
 }
