@@ -27,16 +27,40 @@ function isRetryableModelError(err) {
 
 async function generateWithFallback(ai, params) {
   let lastError = null;
+
   for (const model of MODEL_CANDIDATES) {
     try {
-      return await ai.models.generateContent({ ...params, model });
+      // Dùng thinkingLevel LOW để chấm nhanh trong 3-5 giây, tránh timeout trên Render/Mobile
+      const configWithFastThinking = {
+        ...params.config,
+        thinkingConfig: { thinkingLevel: 'LOW' }
+      };
+
+      return await ai.models.generateContent({
+        ...params,
+        model,
+        config: configWithFastThinking
+      });
     } catch (err) {
       lastError = err;
-      if (!isRetryableModelError(err)) throw err;
+
+      // Nếu model dự phòng nào không hỗ trợ thinkingConfig (lỗi 400), thử gọi lại không kèm thinkingConfig
+      if (err?.status === 400) {
+        try {
+          return await ai.models.generateContent({ ...params, model });
+        } catch (fallbackErr) {
+          lastError = fallbackErr;
+          if (!isRetryableModelError(fallbackErr)) throw fallbackErr;
+        }
+      } else if (!isRetryableModelError(err)) {
+        throw err;
+      }
+
       console.warn(`Model ${model} tam ban/loi (${err.status || 'retryable'}), dang thu model du phong...`);
-      await new Promise(r => setTimeout(r, 600));
+      await new Promise(r => setTimeout(r, 500));
     }
   }
+
   throw lastError;
 }
 

@@ -148,6 +148,8 @@ const downloadAudioLink = document.getElementById('downloadAudioLink');
 const ttsStatus = document.getElementById('ttsStatus');
 const btnRecord = document.getElementById('btnRecord');
 const btnStop = document.getElementById('btnStop');
+const btnRetryGrade = document.getElementById('btnRetryGrade');
+
 const timerEl = document.getElementById('timer');
 const userAudioPlayback = document.getElementById('userAudioPlayback');
 const recordStatus = document.getElementById('recordStatus');
@@ -168,6 +170,7 @@ let practiceTimer;
 let currentAvaBlobUrl = null;
 let currentSampleBlobUrl = null;
 let lastSampleText = '';
+let lastPracticeBlob = null;
 
 async function loadQuestions() {
   try {
@@ -322,17 +325,19 @@ btnRecord.addEventListener('click', async () => {
 
     practiceRecorder.ondataavailable = e => { if (e.data.size > 0) practiceChunks.push(e.data); };
     practiceRecorder.onstop = async () => {
-      stream.getTracks().forEach(t => t.stop());
-      const blob = new Blob(practiceChunks, { type: mimeType || 'audio/webm' });
-      userAudioPlayback.src = URL.createObjectURL(blob);
-      userAudioPlayback.classList.remove('hidden');
-      await submitPracticeAudio(blob);
-    };
+    stream.getTracks().forEach(t => t.stop());
+    const blob = new Blob(practiceChunks, { type: mimeType || 'audio/webm' });
+    lastPracticeBlob = blob;
+    userAudioPlayback.src = URL.createObjectURL(blob);
+    userAudioPlayback.classList.remove('hidden');
+    await submitPracticeAudio(blob);
+  };
 
     practiceRecorder.start();
     btnRecord.disabled = true;
     btnStop.disabled = false;
     resultCard.classList.add('hidden');
+    btnRetryGrade.classList.add('hidden');
     recordStatus.textContent = '🎙️ Đang ghi âm...';
 
     let sec = 0;
@@ -355,6 +360,15 @@ btnStop.addEventListener('click', () => {
 });
 
 async function submitPracticeAudio(blob) {
+  if (!blob || blob.size < 1000) {
+    recordStatus.textContent = '⚠️ Đoạn ghi âm quá ngắn hoặc chưa thu được tiếng. Hãy thử nói lại nhé.';
+    return;
+  }
+
+  btnRetryGrade.classList.add('hidden');
+  btnRetryGrade.disabled = true;
+  recordStatus.textContent = '⏳ Đang gửi âm thanh & chấm điểm AI...';
+
   const formData = new FormData();
   formData.append('audio', blob, 'answer.webm');
   formData.append('question', textInput.value);
@@ -370,9 +384,19 @@ async function submitPracticeAudio(blob) {
     recordStatus.textContent = '🎉 Đã chấm xong và lưu vào Lịch sử hôm nay!';
     resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (err) {
-    recordStatus.textContent = '❌ Lỗi: ' + err.message;
+    const isNetworkDrop = err.message === 'Failed to fetch';
+    recordStatus.textContent = isNetworkDrop
+      ? '❌ Mất kết nối tới server (có thể server đang khởi động lại hoặc mạng yếu). Bạn bấm "🔄 Chấm lại đoạn vừa thu" bên trên nhé!'
+      : '❌ Lỗi: ' + err.message;
+    btnRetryGrade.classList.remove('hidden');
+  } finally {
+    btnRetryGrade.disabled = false;
   }
 }
+
+btnRetryGrade.addEventListener('click', () => {
+  if (lastPracticeBlob) submitPracticeAudio(lastPracticeBlob);
+});
 
 function renderPracticeResult(data) {
   resultCard.classList.remove('hidden');
