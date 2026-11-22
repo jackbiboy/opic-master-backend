@@ -1,36 +1,72 @@
-import fs from "node:fs/promises";
-import { GoogleGenAI, Type } from "@google/genai";
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+import fs from 'node:fs/promises';
+import { GoogleGenAI, Type } from '@google/genai';
+
+const MODEL_CANDIDATES = [...new Set([
+  process.env.GEMINI_MODEL,
+  'gemini-4-hydrogen',
+  'gemini-3.8-flash',
+  'gemini-3.6-flash',
+  'gemini-3.5-flash-lite'
+].filter(Boolean))];
+
+function isRetryableModelError(err) {
+  const status = err?.status;
+  const msg = String(err?.message || '');
+  return (
+    status === 503 ||
+    status === 429 ||
+    status === 404 ||
+    msg.includes('503') ||
+    msg.includes('UNAVAILABLE') ||
+    msg.includes('high demand') ||
+    msg.includes('429') ||
+    msg.includes('404') ||
+    msg.includes('NOT_FOUND')
+  );
+}
+
+async function generateWithFallback(ai, params) {
+  let lastError = null;
+
+  for (const model of MODEL_CANDIDATES) {
+    try {
+      const response = await ai.models.generateContent({
+        ...params,
+        model
+      });
+      return response;
+    } catch (err) {
+      lastError = err;
+      if (!isRetryableModelError(err)) {
+        throw err; // Lỗi không phải do quá tải (ví dụ sai API key) -> báo ngay
+      }
+      console.warn(`Model ${model} tam ban/loi (${err.status || 'retryable'}), dang thu model du phong...`);
+      await new Promise(r => setTimeout(r, 600));
+    }
+  }
+
+  throw lastError;
+}
 
 const CATEGORY_HINTS = {
-  intro:
-    "This is Question 1 (Self-Introduction). Check natural warmth, clear background summary, and smooth flow.",
-  description:
-    "This is a Description/Routine question. Check rich descriptive adjectives, present tense consistency, and logical structure.",
-  memory:
-    "This is a Past/Memorable Experience question. STRICTLY check past tense accuracy (Past Simple / Past Continuous) and storytelling sequence (beginning, climax, ending/feeling).",
-  roleplay:
-    'This is a Role-Play scenario (Questions 11-12). STRICTLY check if the candidate speaks DIRECTLY in first-person to the listener (e.g., "Hi, I\'m calling to..."), asks 3-4 questions (if Q11), or clearly gives 2 alternative solutions (if Q12). Penalize if they talk ABOUT the situation in third person instead of acting it out.',
-  advanced:
-    "This is an Advanced-level comparison/social issue question (Questions 14-15). Check ability to compare past vs present, express opinions with supporting reasons, and maintain connected paragraph structure.",
+  intro: 'This is Question 1 (Self-Introduction). Check natural warmth, clear background summary, and smooth flow.',
+  description: 'This is a Description/Routine question. Check rich descriptive adjectives, present tense consistency, and logical structure.',
+  memory: 'This is a Past/Memorable Experience question. STRICTLY check past tense accuracy (Past Simple / Past Continuous) and storytelling sequence (beginning, climax, ending/feeling).',
+  roleplay: 'This is a Role-Play scenario (Questions 11-12). STRICTLY check if the candidate speaks DIRECTLY in first-person to the listener (e.g., "Hi, I\'m calling to..."), asks 3-4 questions (if Q11), or clearly gives 2 alternative solutions (if Q12). Penalize if they talk ABOUT the situation in third person instead of acting it out.',
+  advanced: 'This is an Advanced-level comparison/social issue question (Questions 14-15). Check ability to compare past vs present, express opinions with supporting reasons, and maintain connected paragraph structure.'
 };
 
 /**
  * Chấm điểm 1 câu nói (hỗ trợ cả chế độ trả lời tự do & đọc theo văn bản)
  */
-export async function gradeOPIcAnswer({
-  audioPath,
-  question,
-  mode = "speaking",
-  category = "",
-}) {
+export async function gradeOPIcAnswer({ audioPath, question, mode = 'speaking', category = '' }) {
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
   const audioBuffer = await fs.readFile(audioPath);
-  const audioBase64 = audioBuffer.toString("base64");
+  const audioBase64 = audioBuffer.toString('base64');
 
-  const isReadingMode = mode === "reading";
-  const categoryContext = CATEGORY_HINTS[category] || "";
+  const isReadingMode = mode === 'reading';
+  const categoryContext = CATEGORY_HINTS[category] || '';
 
   const prompt = isReadingMode
     ? `
@@ -72,24 +108,23 @@ Evaluation Rules:
 5. Write an improved sample answer in English at an IH/AL level while keeping the candidate's original ideas (if Role-play, write it as direct spoken dialogue).
 `;
 
-  const response = await ai.models.generateContent({
-    model: GEMINI_MODEL,
+  const response = await generateWithFallback(ai, {
     contents: [
       {
-        role: "user",
+        role: 'user',
         parts: [
           { text: prompt },
           {
             inlineData: {
-              mimeType: "audio/mp3",
-              data: audioBase64,
-            },
-          },
-        ],
-      },
+              mimeType: 'audio/mp3',
+              data: audioBase64
+            }
+          }
+        ]
+      }
     ],
     config: {
-      responseMimeType: "application/json",
+      responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
         properties: {
@@ -102,8 +137,8 @@ Evaluation Rules:
               fluency: { type: Type.INTEGER },
               pronunciation: { type: Type.INTEGER },
               grammar: { type: Type.INTEGER },
-              vocabulary: { type: Type.INTEGER },
-            },
+              vocabulary: { type: Type.INTEGER }
+            }
           },
           grammarCorrections: {
             type: Type.ARRAY,
@@ -112,15 +147,15 @@ Evaluation Rules:
               properties: {
                 original: { type: Type.STRING },
                 corrected: { type: Type.STRING },
-                explanationVi: { type: Type.STRING },
-              },
-            },
+                explanationVi: { type: Type.STRING }
+              }
+            }
           },
           improvedSampleAnswer: { type: Type.STRING },
-          feedbackVi: { type: Type.STRING },
-        },
-      },
-    },
+          feedbackVi: { type: Type.STRING }
+        }
+      }
+    }
   });
 
   return JSON.parse(response.text);
@@ -133,39 +168,37 @@ export async function generateMockExamFinalReport({
   selfAssessmentLevel,
   adjustedDifficulty,
   surveyTopics,
-  questionResults,
+  questionResults
 }) {
-  const answeredItems = questionResults.filter((q) => !q.skipped);
+  const answeredItems = questionResults.filter(q => !q.skipped);
   if (answeredItems.length === 0) {
     return {
-      finalLevel: "Unratable",
+      finalLevel: 'Unratable',
       averageScores: {
         taskCompletion: 0,
         fluency: 0,
         pronunciation: 0,
         grammar: 0,
-        vocabulary: 0,
+        vocabulary: 0
       },
-      strengthsVi: "Chưa có câu trả lời nào có giọng nói.",
-      weaknessesVi: "Bạn đã bỏ qua toàn bộ câu hỏi trong bài thi.",
-      overallFeedbackVi:
-        "Hãy kiểm tra lại micro và thử hoàn thành đầy đủ các câu hỏi để nhận đánh giá chính xác.",
-      studyPlanVi:
-        "Bắt đầu với chế độ luyện từng câu để làm quen trước khi thi thử lại.",
+      strengthsVi: 'Chưa có câu trả lời nào có giọng nói.',
+      weaknessesVi: 'Bạn đã bỏ qua toàn bộ câu hỏi trong bài thi.',
+      overallFeedbackVi: 'Hãy kiểm tra lại micro và thử hoàn thành đầy đủ các câu hỏi để nhận đánh giá chính xác.',
+      studyPlanVi: 'Bắt đầu với chế độ luyện từng câu để làm quen trước khi thi thử lại.'
     };
   }
 
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-  const compactSummary = questionResults.map((item) => ({
+  const compactSummary = questionResults.map(item => ({
     questionNumber: item.questionNumber,
     category: item.category,
     topic: item.topic,
     question: item.question,
     skipped: item.skipped,
-    transcript: item.grading?.transcript || "(Skipped)",
-    estimatedLevel: item.grading?.estimatedLevel || "Unratable",
-    scores: item.grading?.scores || null,
+    transcript: item.grading?.transcript || '(Skipped)',
+    estimatedLevel: item.grading?.estimatedLevel || 'Unratable',
+    scores: item.grading?.scores || null
   }));
 
   const prompt = `
@@ -174,8 +207,8 @@ Review the candidate's complete OPIc Mock Exam performance across ${questionResu
 
 Candidate Info:
 - Initial Self-Assessment Level (1-6): ${selfAssessmentLevel}
-- Mid-test Difficulty Adjustment (after Q7): ${adjustedDifficulty || "same"}
-- Selected Survey Topics: ${surveyTopics.join(", ")}
+- Mid-test Difficulty Adjustment (after Q7): ${adjustedDifficulty || 'same'}
+- Selected Survey Topics: ${surveyTopics.join(', ')}
 
 Per-question transcripts and preliminary scores:
 ${JSON.stringify(compactSummary, null, 2)}
@@ -196,11 +229,10 @@ Return JSON with:
 - studyPlanVi: 3 việc cụ thể bạn nên ôn trong tuần tới để tăng band (tiếng Việt)
 `;
 
-  const response = await ai.models.generateContent({
-    model: GEMINI_MODEL,
+  const response = await generateWithFallback(ai, {
     contents: prompt,
     config: {
-      responseMimeType: "application/json",
+      responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
         properties: {
@@ -212,16 +244,16 @@ Return JSON with:
               fluency: { type: Type.INTEGER },
               pronunciation: { type: Type.INTEGER },
               grammar: { type: Type.INTEGER },
-              vocabulary: { type: Type.INTEGER },
-            },
+              vocabulary: { type: Type.INTEGER }
+            }
           },
           strengthsVi: { type: Type.STRING },
           weaknessesVi: { type: Type.STRING },
           overallFeedbackVi: { type: Type.STRING },
-          studyPlanVi: { type: Type.STRING },
-        },
-      },
-    },
+          studyPlanVi: { type: Type.STRING }
+        }
+      }
+    }
   });
 
   return JSON.parse(response.text);
