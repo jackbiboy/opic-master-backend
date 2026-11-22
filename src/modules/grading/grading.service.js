@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import { GoogleGenAI, Type } from "@google/genai";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 
 const CATEGORY_HINTS = {
   intro:
@@ -72,7 +73,7 @@ Evaluation Rules:
 `;
 
   const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
+    model: GEMINI_MODEL,
     contents: [
       {
         role: "user",
@@ -196,7 +197,7 @@ Return JSON with:
 `;
 
   const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
+    model: GEMINI_MODEL,
     contents: prompt,
     config: {
       responseMimeType: "application/json",
