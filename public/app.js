@@ -1,5 +1,6 @@
 // ==================== BẢO MẬT PIN & TỰ ĐỘNG GỬI TOKEN ====================
 const AUTH_TOKEN_KEY = 'opic_auth_token';
+const bootLoading = document.getElementById('bootLoading');
 const lockScreen = document.getElementById('lockScreen');
 const appShell = document.getElementById('appShell');
 const pinLoginForm = document.getElementById('pinLoginForm');
@@ -29,7 +30,12 @@ window.fetch = async (url, options = {}) => {
   return res;
 };
 
+function hideBootLoading() {
+  if (bootLoading) bootLoading.classList.add('hidden');
+}
+
 function showLockScreen(msg = '') {
+  hideBootLoading();
   appShell.classList.add('hidden');
   lockScreen.classList.remove('hidden');
   pinErrorText.textContent = msg;
@@ -38,6 +44,7 @@ function showLockScreen(msg = '') {
 }
 
 function showAppShell(pinRequired) {
+  hideBootLoading();
   lockScreen.classList.add('hidden');
   appShell.classList.remove('hidden');
   btnLockApp.classList.toggle('hidden', !pinRequired);
@@ -57,7 +64,7 @@ async function initAuthAndApp() {
       showLockScreen();
     }
   } catch {
-    showLockScreen('Không kết nối được tới máy chủ.');
+    showLockScreen('Không kết nối được tới máy chủ. Vui lòng tải lại trang.');
   }
 }
 
@@ -148,16 +155,14 @@ const downloadAudioLink = document.getElementById('downloadAudioLink');
 const ttsStatus = document.getElementById('ttsStatus');
 const btnRecord = document.getElementById('btnRecord');
 const btnStop = document.getElementById('btnStop');
-const btnRetryGrade = document.getElementById('btnRetryGrade');
-
 const timerEl = document.getElementById('timer');
 const userAudioPlayback = document.getElementById('userAudioPlayback');
 const recordStatus = document.getElementById('recordStatus');
 const resultCard = document.getElementById('resultCard');
-
 const btnAvaReadSample = document.getElementById('btnAvaReadSample');
 const sampleAudioPlayer = document.getElementById('sampleAudioPlayer');
 const sampleTtsStatus = document.getElementById('sampleTtsStatus');
+const sampleExplainText = document.getElementById('sampleExplainText');
 
 let allQuestions = [];
 let filteredQuestions = [];
@@ -170,7 +175,6 @@ let practiceTimer;
 let currentAvaBlobUrl = null;
 let currentSampleBlobUrl = null;
 let lastSampleText = '';
-let lastPracticeBlob = null;
 
 async function loadQuestions() {
   try {
@@ -255,8 +259,8 @@ async function fetchAvaAudioBlob(text, voice = voiceSelect.value, rate = rateSel
 }
 
 btnAvaSpeak.addEventListener('click', async () => {
-  const textToSpeak = textInput.value.trim();
-  if (!textToSpeak) {
+  const textToSpeak = textInput.value;
+  if (!textToSpeak.trim()) {
     ttsStatus.textContent = '⚠️ Vui lòng nhập văn bản tiếng Anh trước.';
     return;
   }
@@ -271,13 +275,8 @@ btnAvaSpeak.addEventListener('click', async () => {
     avaAudioPlayer.classList.remove('hidden');
     downloadAudioLink.href = currentAvaBlobUrl;
     downloadAudioLink.classList.remove('hidden');
-
-    try {
-      await avaAudioPlayer.play();
-      ttsStatus.textContent = '🎧 Ava đang đọc...';
-    } catch {
-      ttsStatus.textContent = '✅ Đã tải xong! Bấm nút Play (▶) trên thanh phát bên trên để nghe.';
-    }
+    await avaAudioPlayer.play();
+    ttsStatus.textContent = '🎧 Ava đang đọc...';
   } catch (err) {
     ttsStatus.textContent = '❌ Lỗi giọng đọc Ava: ' + err.message;
   } finally {
@@ -285,32 +284,27 @@ btnAvaSpeak.addEventListener('click', async () => {
   }
 });
 
-// Phát giọng Ava NGAY TẠI CHỖ cho Bài mẫu nâng cấp (không cuộn trang lên đầu nữa)
+// Đọc bài mẫu ngay tại khung kết quả (không nhảy cuộn lên đầu trang)
 btnAvaReadSample.addEventListener('click', async () => {
   const cleanSample = lastSampleText.replace(/[*\/]/g, '').trim();
-  if (!cleanSample) {
-    sampleTtsStatus.textContent = '⚠️ Chưa có nội dung bài mẫu để đọc.';
-    return;
-  }
+  if (!cleanSample) return;
 
   btnAvaReadSample.disabled = true;
-  sampleTtsStatus.textContent = '⏳ Ava đang chuẩn bị giọng đọc bài mẫu...';
+  if (sampleTtsStatus) sampleTtsStatus.textContent = '⏳ Ava đang chuẩn bị giọng đọc bài mẫu...';
 
   try {
     const blob = await fetchAvaAudioBlob(cleanSample);
     if (currentSampleBlobUrl) URL.revokeObjectURL(currentSampleBlobUrl);
     currentSampleBlobUrl = URL.createObjectURL(blob);
-    sampleAudioPlayer.src = currentSampleBlobUrl;
-    sampleAudioPlayer.classList.remove('hidden');
 
-    try {
+    if (sampleAudioPlayer) {
+      sampleAudioPlayer.src = currentSampleBlobUrl;
+      sampleAudioPlayer.classList.remove('hidden');
       await sampleAudioPlayer.play();
-      sampleTtsStatus.textContent = '🎧 Ava đang đọc bài mẫu...';
-    } catch {
-      sampleTtsStatus.textContent = '✅ Đã tải giọng Ava! Bấm nút Play (▶) bên dưới để nghe.';
     }
+    if (sampleTtsStatus) sampleTtsStatus.textContent = '🎧 Ava đang đọc bài mẫu...';
   } catch (err) {
-    sampleTtsStatus.textContent = '❌ Lỗi giọng đọc: ' + err.message;
+    if (sampleTtsStatus) sampleTtsStatus.textContent = '❌ Lỗi đọc bài mẫu: ' + err.message;
   } finally {
     btnAvaReadSample.disabled = false;
   }
@@ -325,19 +319,17 @@ btnRecord.addEventListener('click', async () => {
 
     practiceRecorder.ondataavailable = e => { if (e.data.size > 0) practiceChunks.push(e.data); };
     practiceRecorder.onstop = async () => {
-    stream.getTracks().forEach(t => t.stop());
-    const blob = new Blob(practiceChunks, { type: mimeType || 'audio/webm' });
-    lastPracticeBlob = blob;
-    userAudioPlayback.src = URL.createObjectURL(blob);
-    userAudioPlayback.classList.remove('hidden');
-    await submitPracticeAudio(blob);
-  };
+      stream.getTracks().forEach(t => t.stop());
+      const blob = new Blob(practiceChunks, { type: mimeType || 'audio/webm' });
+      userAudioPlayback.src = URL.createObjectURL(blob);
+      userAudioPlayback.classList.remove('hidden');
+      await submitPracticeAudio(blob);
+    };
 
     practiceRecorder.start();
     btnRecord.disabled = true;
     btnStop.disabled = false;
     resultCard.classList.add('hidden');
-    btnRetryGrade.classList.add('hidden');
     recordStatus.textContent = '🎙️ Đang ghi âm...';
 
     let sec = 0;
@@ -360,15 +352,6 @@ btnStop.addEventListener('click', () => {
 });
 
 async function submitPracticeAudio(blob) {
-  if (!blob || blob.size < 1000) {
-    recordStatus.textContent = '⚠️ Đoạn ghi âm quá ngắn hoặc chưa thu được tiếng. Hãy thử nói lại nhé.';
-    return;
-  }
-
-  btnRetryGrade.classList.add('hidden');
-  btnRetryGrade.disabled = true;
-  recordStatus.textContent = '⏳ Đang gửi âm thanh & chấm điểm AI...';
-
   const formData = new FormData();
   formData.append('audio', blob, 'answer.webm');
   formData.append('question', textInput.value);
@@ -382,56 +365,46 @@ async function submitPracticeAudio(blob) {
     if (!res.ok || json.status !== 'success') throw new Error(json.message || json.error);
     renderPracticeResult(json.data);
     recordStatus.textContent = '🎉 Đã chấm xong và lưu vào Lịch sử hôm nay!';
-    resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (err) {
-    const isNetworkDrop = err.message === 'Failed to fetch';
-    recordStatus.textContent = isNetworkDrop
-      ? '❌ Mất kết nối tới server (có thể server đang khởi động lại hoặc mạng yếu). Bạn bấm "🔄 Chấm lại đoạn vừa thu" bên trên nhé!'
-      : '❌ Lỗi: ' + err.message;
-    btnRetryGrade.classList.remove('hidden');
-  } finally {
-    btnRetryGrade.disabled = false;
+    recordStatus.textContent = '❌ Lỗi: ' + err.message;
   }
 }
 
-btnRetryGrade.addEventListener('click', () => {
-  if (lastPracticeBlob) submitPracticeAudio(lastPracticeBlob);
-});
-
 function renderPracticeResult(data) {
   resultCard.classList.remove('hidden');
-  sampleAudioPlayer.classList.add('hidden');
-  sampleTtsStatus.textContent = '';
-
-  document.getElementById('levelBadge').textContent = `Band ước lượng: ${data.estimatedLevel || '--'}`;
-  document.getElementById('transcriptText').textContent = data.transcript || '(Không có dữ liệu)';
-  document.getElementById('feedbackText').textContent = data.feedbackVi || '(Chưa có nhận xét)';
-
+  document.getElementById('levelBadge').textContent = `Level: ${data.estimatedLevel}`;
+  document.getElementById('transcriptText').textContent = data.transcript;
+  document.getElementById('feedbackText').textContent = data.feedbackVi;
   lastSampleText = data.improvedSampleAnswer || '';
-  document.getElementById('sampleAnswerText').textContent = lastSampleText || '(Không có bài mẫu)';
+  document.getElementById('sampleAnswerText').textContent = lastSampleText;
+
+  if (sampleAudioPlayer) sampleAudioPlayer.classList.add('hidden');
+  if (sampleTtsStatus) sampleTtsStatus.textContent = '';
 
   const isReading = currentMode === 'reading';
   const labels = isReading ? SCORE_LABELS_READ : SCORE_LABELS_SPEAK;
   document.getElementById('correctionsTitle').textContent = isReading
     ? '🗣️ 3. Các từ cần sửa phát âm & trọng âm' : '✏️ 3. Chi tiết lỗi ngữ pháp & diễn đạt';
   document.getElementById('sampleTitle').textContent = isReading
-    ? '📖 4. Gợi ý ngắt nhịp & nhấn trọng âm khi đọc' : '🌟 4. Bài mẫu nâng cấp (Band IH / AL)';
-  document.getElementById('sampleExplainText').textContent = isReading
-    ? 'Ký hiệu "/" là chỗ ngắt hơi tự nhiên khi đọc để câu nghe trôi chảy và có ngữ điệu hơn.'
-    : 'Đây là đoạn trả lời mẫu viết lại từ chính ý tưởng của bạn nhưng nâng cấp từ vựng & cấu trúc câu lên trình độ cao (IH/AL) để bạn học theo và luyện đọc lại.';
+    ? '📖 4. Gợi ý ngắt nhịp & nhấn trọng âm' : '🌟 4. Bài mẫu nâng cấp (Band IH / AL)';
+  if (sampleExplainText) {
+    sampleExplainText.textContent = isReading
+      ? 'Ký hiệu "/" là chỗ ngắt hơi tự nhiên, chữ IN HOA là chỗ nhấn trọng âm câu để bạn luyện đọc theo.'
+      : 'Đây là đoạn trả lời mẫu viết lại từ chính ý tưởng của bạn nhưng nâng cấp từ vựng & cấu trúc câu lên trình độ cao (IH/AL) để bạn học theo.';
+  }
 
   document.getElementById('scoresGrid').innerHTML = Object.entries(data.scores || {}).map(([k, v]) => `
-    <div class="score-item"><div class="score-val">${v}/10</div><div style="font-size:12px;color:#475569;margin-top:2px;">${labels[k] || k}</div></div>
+    <div class="score-item"><div class="score-val">${v}/10</div><div style="font-size:13px;color:#475569;">${labels[k] || k}</div></div>
   `).join('');
 
   const list = document.getElementById('correctionsList');
   list.innerHTML = (!data.grammarCorrections || data.grammarCorrections.length === 0)
-    ? '<p style="margin:0;color:#15803d;font-weight:600;">✅ Rất tốt! Không phát hiện lỗi đáng kể nào.</p>'
+    ? '<p class="result-text">Rất tốt! Không phát hiện lỗi đáng kể.</p>'
     : data.grammarCorrections.map(c => `
       <div class="correction">
-        <div>❌ <strong>Bạn nói:</strong> <s>${escapeHtml(c.original)}</s></div>
-        <div style="color:#15803d;margin-top:4px;">✅ <strong>Sửa chuẩn:</strong> ${escapeHtml(c.corrected)}</div>
-        <div style="color:#475569;margin-top:6px;">💡 ${escapeHtml(c.explanationVi)}</div>
+        <div><strong>Bạn nói:</strong> <s>${escapeHtml(c.original)}</s></div>
+        <div style="color:#15803d;"><strong>Chuẩn hơn:</strong> ${escapeHtml(c.corrected)}</div>
+        <div style="font-size:13px;color:#475569;margin-top:4px;">💡 ${escapeHtml(c.explanationVi)}</div>
       </div>
     `).join('');
 }
@@ -540,7 +513,7 @@ async function loadExamQuestion(index, questionObj) {
     await examAvaAudio.play();
   } catch {
     avaExamAvatar.classList.remove('speaking');
-    document.getElementById('examAvaStatus').textContent = '⚠️ Trình duyệt chặn tự phát — bấm "Nghe lại" để nghe câu hỏi.';
+    document.getElementById('examAvaStatus').textContent = '⚠️ Trình duyệt chặn tự phát âm thanh — bấm "Nghe lại" để nghe.';
     btnExamReplay.disabled = false;
     btnExamRecord.disabled = false;
   }
@@ -671,14 +644,14 @@ async function finalizeMockExam() {
 
 function renderFinalExamReport(record) {
   const report = record.report || {};
-  document.getElementById('finalExamLevelBadge').textContent = `Band dự kiến: ${report.finalLevel}`;
+  document.getElementById('finalExamLevelBadge').textContent = `Band chính thức dự kiến: ${report.finalLevel}`;
   document.getElementById('finalOverallFeedback').textContent = report.overallFeedbackVi || '';
   document.getElementById('finalStrengths').textContent = report.strengthsVi || '';
   document.getElementById('finalWeaknesses').textContent = report.weaknessesVi || '';
   document.getElementById('finalStudyPlan').textContent = report.studyPlanVi || '';
 
   document.getElementById('finalExamScoresGrid').innerHTML = Object.entries(report.averageScores || {}).map(([k, v]) => `
-    <div class="score-item"><div class="score-val">${v}/10</div><div style="font-size:12px;color:#475569;">${SCORE_LABELS_SPEAK[k] || k}</div></div>
+    <div class="score-item"><div class="score-val">${v}/10</div><div style="font-size:13px;color:#475569;">${SCORE_LABELS_SPEAK[k] || k}</div></div>
   `).join('');
 
   document.getElementById('finalExamBreakdown').innerHTML = (record.questionResults || []).map(item => `
@@ -688,7 +661,7 @@ function renderFinalExamReport(record) {
       ${item.skipped ? '<p>Không có dữ liệu giọng nói.</p>' : `
         <p><strong>Transcript:</strong> ${escapeHtml(item.grading?.transcript)}</p>
         <p><strong>Nhận xét:</strong> ${escapeHtml(item.grading?.feedbackVi)}</p>
-        <p style="color:#15803d;"><strong>Bài mẫu nâng cấp:</strong> ${escapeHtml(item.grading?.improvedSampleAnswer)}</p>
+        <p style="color:#15803d;"><strong>Gợi ý nâng cấp:</strong> ${escapeHtml(item.grading?.improvedSampleAnswer)}</p>
       `}
     </details>
   `).join('');
@@ -718,11 +691,11 @@ async function loadHistory() {
     const { summary, days } = json.data;
 
     summaryGrid.innerHTML = `
-      <div class="score-item"><div class="score-val">${summary.totalRecords}</div><div style="font-size:12px;color:#475569;">Tổng bài đã luyện</div></div>
-      <div class="score-item"><div class="score-val">${summary.mockExamsCount}</div><div style="font-size:12px;color:#475569;">Bài thi 12-15 câu</div></div>
-      <div class="score-item"><div class="score-val">${summary.totalStudyDays}</div><div style="font-size:12px;color:#475569;">Số ngày chăm chỉ</div></div>
-      <div class="score-item"><div class="score-val">${summary.overallAverageScore}/10</div><div style="font-size:12px;color:#475569;">Điểm TB tích lũy</div></div>
-      <div class="score-item"><div class="score-val">${escapeHtml(summary.latestLevel)}</div><div style="font-size:12px;color:#475569;">Band gần nhất</div></div>
+      <div class="score-item"><div class="score-val">${summary.totalRecords}</div><div style="font-size:13px;color:#475569;">Tổng bài đã luyện</div></div>
+      <div class="score-item"><div class="score-val">${summary.mockExamsCount}</div><div style="font-size:13px;color:#475569;">Bài thi 12-15 câu</div></div>
+      <div class="score-item"><div class="score-val">${summary.totalStudyDays}</div><div style="font-size:13px;color:#475569;">Số ngày chăm chỉ</div></div>
+      <div class="score-item"><div class="score-val">${summary.overallAverageScore}/10</div><div style="font-size:13px;color:#475569;">Điểm TB tích lũy</div></div>
+      <div class="score-item"><div class="score-val">${escapeHtml(summary.latestLevel)}</div><div style="font-size:13px;color:#475569;">Band gần nhất</div></div>
     `;
 
     if (!days || days.length === 0) {
@@ -741,14 +714,14 @@ async function loadHistory() {
         const timeStr = new Date(item.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
         return `
           <div class="history-item">
-            <div style="flex:1;min-width:200px;">
+            <div style="flex:1;min-width:220px;">
               <span class="tag-type ${tagClass}">${tagText}</span>
-              <strong style="margin-left:6px;font-size:14px;">${escapeHtml(item.title)}</strong>
+              <strong style="margin-left:6px;">${escapeHtml(item.title)}</strong>
               <div style="font-size:12px;color:#64748b;margin-top:4px;">🕒 ${timeStr} • Điểm TB: <strong>${item.averageScore}/10</strong></div>
             </div>
             <div style="display:flex;gap:8px;align-items:center;">
               <span class="badge" style="font-size:13px;padding:4px 10px;">${escapeHtml(item.estimatedLevel)}</span>
-              <button class="btn-secondary" onclick="viewHistoryDetail('${item.id}')" style="padding:6px 12px;font-size:13px;min-height:34px;">Xem</button>
+              <button class="btn-secondary" onclick="viewHistoryDetail('${item.id}')" style="padding:6px 12px;font-size:13px;">Xem</button>
               <button class="btn-danger-outline" onclick="deleteHistory('${item.id}')">Xóa</button>
             </div>
           </div>
@@ -771,8 +744,8 @@ window.viewHistoryDetail = async function (id) {
   if (item.type === 'mock_exam') {
     body.innerHTML = `
       <p><strong>Band tổng kết:</strong> <span class="badge">${escapeHtml(item.estimatedLevel)}</span></p>
-      <p style="line-height:1.6;"><strong>Nhận xét tổng thể:</strong> ${escapeHtml(item.report?.overallFeedbackVi)}</p>
-      <p style="line-height:1.6;"><strong>Lộ trình đề xuất:</strong> ${escapeHtml(item.report?.studyPlanVi)}</p>
+      <p><strong>Nhận xét tổng thể:</strong> ${escapeHtml(item.report?.overallFeedbackVi)}</p>
+      <p><strong>Lộ trình đề xuất:</strong> ${escapeHtml(item.report?.studyPlanVi)}</p>
       ${(item.questionResults || []).map(q => `
         <details class="q-detail">
           <summary>Câu ${q.questionNumber}: ${escapeHtml(q.title)} — ${q.skipped ? 'Bỏ qua' : escapeHtml(q.grading?.estimatedLevel)}</summary>
@@ -785,22 +758,10 @@ window.viewHistoryDetail = async function (id) {
     const r = item.result || {};
     body.innerHTML = `
       <p><strong>Band:</strong> <span class="badge">${escapeHtml(item.estimatedLevel)}</span> • <strong>Điểm TB:</strong> ${item.averageScore}/10</p>
-      <div class="result-section">
-        <div class="result-section-title">❓ Câu hỏi / Văn bản</div>
-        <p class="result-text">${escapeHtml(item.question)}</p>
-      </div>
-      <div class="result-section">
-        <div class="result-section-title">📝 Transcript</div>
-        <p class="result-text">${escapeHtml(r.transcript)}</p>
-      </div>
-      <div class="result-section">
-        <div class="result-section-title">💬 Nhận xét</div>
-        <p class="result-text">${escapeHtml(r.feedbackVi)}</p>
-      </div>
-      <div class="sample-section">
-        <div class="result-section-title" style="color:#166534;">🌟 Bài mẫu nâng cấp</div>
-        <div class="sample-text">${escapeHtml(r.improvedSampleAnswer)}</div>
-      </div>
+      <p><strong>Câu hỏi / Văn bản:</strong> ${escapeHtml(item.question)}</p>
+      <p><strong>Transcript:</strong> ${escapeHtml(r.transcript)}</p>
+      <p><strong>Nhận xét:</strong> ${escapeHtml(r.feedbackVi)}</p>
+      <div class="sample-box"><strong>Bài mẫu:</strong><br>${escapeHtml(r.improvedSampleAnswer)}</div>
     `;
   }
   card.classList.remove('hidden');
