@@ -27,85 +27,113 @@ function isRetryableModelError(err) {
 
 async function generateWithFallback(ai, params) {
   let lastError = null;
-
   for (const model of MODEL_CANDIDATES) {
     try {
-      const response = await ai.models.generateContent({
-        ...params,
-        model
-      });
-      return response;
+      return await ai.models.generateContent({ ...params, model });
     } catch (err) {
       lastError = err;
-      if (!isRetryableModelError(err)) {
-        throw err; // Lỗi không phải do quá tải (ví dụ sai API key) -> báo ngay
-      }
+      if (!isRetryableModelError(err)) throw err;
       console.warn(`Model ${model} tam ban/loi (${err.status || 'retryable'}), dang thu model du phong...`);
       await new Promise(r => setTimeout(r, 600));
     }
   }
-
   throw lastError;
+}
+
+/**
+ * Chuẩn hóa & giải cứu trường hợp model nhét nhầm phần JSON đuôi vào trong trường transcript
+ */
+function rescueAndNormalizeGrading(parsed) {
+  let data = parsed && typeof parsed === 'object' ? { ...parsed } : {};
+
+  if (
+    typeof data.transcript === 'string' &&
+    data.transcript.includes('"estimatedLevel"') &&
+    !data.estimatedLevel
+  ) {
+    try {
+      const splitMarker = /",\s*"estimatedLevel"\s*:/;
+      const match = data.transcript.match(splitMarker);
+      if (match) {
+        const idx = match.index;
+        const realTranscript = data.transcript.slice(0, idx);
+        let tailJsonStr = '{"estimatedLevel":' + data.transcript.slice(idx + match[0].length);
+        if (!tailJsonStr.trim().endsWith('}')) tailJsonStr += '}';
+        const tailObj = JSON.parse(tailJsonStr);
+        data = { transcript: realTranscript, ...tailObj };
+      }
+    } catch (e) {
+      console.warn('Khong tach duoc JSON long trong transcript:', e.message);
+    }
+  }
+
+  return {
+    transcript: data.transcript || '(Không nghe rõ nội dung)',
+    estimatedLevel: data.estimatedLevel || 'IM1',
+    scores: {
+      taskCompletion: Number(data.scores?.taskCompletion ?? 5),
+      fluency: Number(data.scores?.fluency ?? 5),
+      pronunciation: Number(data.scores?.pronunciation ?? 5),
+      grammar: Number(data.scores?.grammar ?? 5),
+      vocabulary: Number(data.scores?.vocabulary ?? 5)
+    },
+    grammarCorrections: Array.isArray(data.grammarCorrections) ? data.grammarCorrections : [],
+    improvedSampleAnswer: data.improvedSampleAnswer || '',
+    feedbackVi: data.feedbackVi || 'Hãy tiếp tục luyện tập mở rộng ý và nối câu trôi chảy hơn.'
+  };
 }
 
 const CATEGORY_HINTS = {
   intro: 'This is Question 1 (Self-Introduction). Check natural warmth, clear background summary, and smooth flow.',
   description: 'This is a Description/Routine question. Check rich descriptive adjectives, present tense consistency, and logical structure.',
-  memory: 'This is a Past/Memorable Experience question. STRICTLY check past tense accuracy (Past Simple / Past Continuous) and storytelling sequence (beginning, climax, ending/feeling).',
-  roleplay: 'This is a Role-Play scenario (Questions 11-12). STRICTLY check if the candidate speaks DIRECTLY in first-person to the listener (e.g., "Hi, I\'m calling to..."), asks 3-4 questions (if Q11), or clearly gives 2 alternative solutions (if Q12). Penalize if they talk ABOUT the situation in third person instead of acting it out.',
-  advanced: 'This is an Advanced-level comparison/social issue question (Questions 14-15). Check ability to compare past vs present, express opinions with supporting reasons, and maintain connected paragraph structure.'
+  memory: 'This is a Past/Memorable Experience question. STRICTLY check past tense accuracy (Past Simple / Past Continuous) and storytelling sequence.',
+  roleplay: 'This is a Role-Play scenario (Questions 11-12). STRICTLY check if the candidate speaks DIRECTLY in first-person to the listener, asks 3-4 questions (Q11), or clearly gives 2 alternative solutions (Q12).',
+  advanced: 'This is an Advanced-level comparison/social issue question (Questions 14-15). Check ability to compare past vs present and maintain connected paragraph structure.'
 };
 
-/**
- * Chấm điểm 1 câu nói (hỗ trợ cả chế độ trả lời tự do & đọc theo văn bản)
- */
 export async function gradeOPIcAnswer({ audioPath, question, mode = 'speaking', category = '' }) {
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
   const audioBuffer = await fs.readFile(audioPath);
   const audioBase64 = audioBuffer.toString('base64');
-
   const isReadingMode = mode === 'reading';
   const categoryContext = CATEGORY_HINTS[category] || '';
 
   const prompt = isReadingMode
     ? `
 You are an American English Pronunciation & Shadowing Coach.
-The learner is practicing READING ALOUD / SHADOWING the following reference text.
-Listen carefully to the audio and compare it word-by-word with the reference text.
+Listen to the learner reading aloud the reference text and compare word-by-word.
 
 Reference text:
 "${question}"
 
-Evaluation Rules:
-1. Transcribe exactly what you hear in the audio (including mispronounced words, skipped words, or hesitations). If no speech is heard, set transcript to "(Không nghe thấy giọng nói)" and estimatedLevel to "Unratable".
-2. Rate overall pronunciation & delivery proficiency using ACTFL scale equivalent (IL, IM1, IM2, IM3, IH, AL).
-3. Score 1-10 on: taskCompletion (accuracy vs reference text), fluency (rhythm, pacing, natural pauses), pronunciation (clarity of consonants/vowels/word endings), grammar (10 if read accurately, lower if words were altered/dropped), vocabulary (natural intonation & stress).
-4. In "grammarCorrections", list specific words or phrases they mispronounced, dropped, or stressed wrongly:
-   - original: what they sounded like / the word they struggled with
-   - corrected: the exact target word/phrase with phonetic hint (e.g., "comfortable /ˈkʌmftərbəl/")
-   - explanationVi: hướng dẫn chi tiết cách phát âm, nối âm hoặc nhấn trọng âm bằng tiếng Việt.
-5. In "improvedSampleAnswer", rewrite the reference text marked with "/" for natural pauses and **bold** or UPPERCASE for stressed words to help them shadow better.
-6. Provide encouraging, practical tips in Vietnamese in "feedbackVi".
+STRICT OUTPUT RULES:
+- Return a valid JSON object matching the schema.
+- Keep "transcript" strictly to ONLY the spoken English words you hear (no JSON syntax inside). If silent, set transcript to "(Không nghe thấy giọng nói)" and estimatedLevel to "Unratable".
+- Rate ACTFL equivalent level (IL, IM1, IM2, IM3, IH, AL) in "estimatedLevel".
+- Score 1-10 in "scores".
+- List mispronounced/dropped/wrongly-stressed words in "grammarCorrections" with phonetic hint and Vietnamese explanation.
+- In "improvedSampleAnswer", provide the reference text with "/" for pauses to practice shadowing.
+- In "feedbackVi", give clear Vietnamese coaching tips.
 `
     : `
-You are a certified ACTFL OPIc (Oral Proficiency Interview - computer) Examiner.
-Listen carefully to the candidate's spontaneous audio response to the following OPIc question.
+You are a certified ACTFL OPIc Examiner.
+Listen carefully to the candidate's audio response to the following OPIc question.
 
-Question asked by the examiner (Ava):
+Question asked by Ava:
 "${question}"
 
-Question Type Context:
+Question Context:
 ${categoryContext}
 
-Evaluation Rules:
-1. Transcribe accurately what the candidate actually said (including noticeable hesitations like "uhm", "ah" if any). If no speech is heard, set transcript to "(Không nghe thấy giọng nói)" and estimatedLevel to "Unratable".
-2. Rate according to ACTFL OPIc levels: NL, NM, NH, IL, IM1, IM2, IM3, IH, or AL.
-   - To reach IM2/IM3: candidate must produce strings of sentences and handle basic descriptions/routines.
-   - To reach IH/AL: candidate must speak in connected paragraphs, handle past/present/future tenses accurately, and use rich vocabulary naturally.
-3. Evaluate 5 scores on a 1-10 scale: taskCompletion, fluency, pronunciation, grammar, vocabulary.
-4. Provide grammar/expression/pronunciation corrections and overall feedback in Vietnamese so a Vietnamese learner can understand easily.
-5. Write an improved sample answer in English at an IH/AL level while keeping the candidate's original ideas (if Role-play, write it as direct spoken dialogue).
+STRICT OUTPUT RULES:
+- Return a valid JSON object matching the schema.
+- Keep "transcript" strictly to ONLY the spoken words you hear (do NOT put other JSON fields inside "transcript"). If silent, set transcript to "(Không nghe thấy giọng nói)" and estimatedLevel to "Unratable".
+- Rate ACTFL level in "estimatedLevel" (NL, NM, NH, IL, IM1, IM2, IM3, IH, or AL).
+- Evaluate 5 integer scores (1-10) in "scores".
+- List specific grammar/pronunciation mistakes in "grammarCorrections" with Vietnamese explanations.
+- In "improvedSampleAnswer", rewrite a natural Band IH/AL English response keeping the candidate's own ideas.
+- In "feedbackVi", write clear Vietnamese feedback (use line breaks for readability).
 `;
 
   const response = await generateWithFallback(ai, {
@@ -127,11 +155,26 @@ Evaluation Rules:
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
+        required: [
+          'estimatedLevel',
+          'transcript',
+          'scores',
+          'feedbackVi',
+          'grammarCorrections',
+          'improvedSampleAnswer'
+        ],
         properties: {
-          transcript: { type: Type.STRING },
-          estimatedLevel: { type: Type.STRING },
+          estimatedLevel: {
+            type: Type.STRING,
+            description: 'ACTFL rating such as NL, NM, NH, IL, IM1, IM2, IM3, IH, or AL'
+          },
+          transcript: {
+            type: Type.STRING,
+            description: 'Only the verbatim transcript of what the candidate spoke in the audio'
+          },
           scores: {
             type: Type.OBJECT,
+            required: ['taskCompletion', 'fluency', 'pronunciation', 'grammar', 'vocabulary'],
             properties: {
               taskCompletion: { type: Type.INTEGER },
               fluency: { type: Type.INTEGER },
@@ -140,10 +183,15 @@ Evaluation Rules:
               vocabulary: { type: Type.INTEGER }
             }
           },
+          feedbackVi: {
+            type: Type.STRING,
+            description: 'Overall feedback and advice written clearly in Vietnamese'
+          },
           grammarCorrections: {
             type: Type.ARRAY,
             items: {
               type: Type.OBJECT,
+              required: ['original', 'corrected', 'explanationVi'],
               properties: {
                 original: { type: Type.STRING },
                 corrected: { type: Type.STRING },
@@ -151,19 +199,19 @@ Evaluation Rules:
               }
             }
           },
-          improvedSampleAnswer: { type: Type.STRING },
-          feedbackVi: { type: Type.STRING }
+          improvedSampleAnswer: {
+            type: Type.STRING,
+            description: 'Upgraded English sample response (IH/AL level) based on candidate ideas'
+          }
         }
       }
     }
   });
 
-  return JSON.parse(response.text);
+  const parsed = JSON.parse(response.text);
+  return rescueAndNormalizeGrading(parsed);
 }
 
-/**
- * Đánh giá tổng thể toàn bài thi OPIc (12 hoặc 15 câu) theo chuẩn ACTFL Holistic Rating
- */
 export async function generateMockExamFinalReport({
   selfAssessmentLevel,
   adjustedDifficulty,
@@ -174,17 +222,11 @@ export async function generateMockExamFinalReport({
   if (answeredItems.length === 0) {
     return {
       finalLevel: 'Unratable',
-      averageScores: {
-        taskCompletion: 0,
-        fluency: 0,
-        pronunciation: 0,
-        grammar: 0,
-        vocabulary: 0
-      },
+      averageScores: { taskCompletion: 0, fluency: 0, pronunciation: 0, grammar: 0, vocabulary: 0 },
       strengthsVi: 'Chưa có câu trả lời nào có giọng nói.',
       weaknessesVi: 'Bạn đã bỏ qua toàn bộ câu hỏi trong bài thi.',
-      overallFeedbackVi: 'Hãy kiểm tra lại micro và thử hoàn thành đầy đủ các câu hỏi để nhận đánh giá chính xác.',
-      studyPlanVi: 'Bắt đầu với chế độ luyện từng câu để làm quen trước khi thi thử lại.'
+      overallFeedbackVi: 'Hãy kiểm tra lại micro và thử hoàn thành đầy đủ các câu hỏi.',
+      studyPlanVi: 'Bắt đầu với chế độ luyện từng câu để làm quen trước.'
     };
   }
 
@@ -213,20 +255,7 @@ Candidate Info:
 Per-question transcripts and preliminary scores:
 ${JSON.stringify(compactSummary, null, 2)}
 
-ACTFL Holistic Rating Principles:
-- Do NOT just take a blind mathematical average. Look at SUSTAINED performance across the whole interview.
-- To achieve IM2 or IM3: candidate must consistently form strings of sentences, describe routines, and handle basic past events/role-plays without breaking down.
-- To achieve IH (Intermediate High): candidate must produce connected paragraphs most of the time, narrate past events with good tense control, handle Role-Play complications well, and attempt Advanced questions meaningfully.
-- To achieve AL (Advanced Low): candidate must sustain paragraph-level discourse across past/present/future, handle unexpected Role-Play problems smoothly, and discuss abstract/comparison topics (Q14-15) clearly with rich vocabulary.
-- Penalize heavily if multiple questions were skipped or very short (<10 words).
-
-Return JSON with:
-- finalLevel: one of NL, NM, NH, IL, IM1, IM2, IM3, IH, AL
-- averageScores: integer 1-10 for taskCompletion, fluency, pronunciation, grammar, vocabulary
-- strengthsVi: điểm mạnh nổi bật xuyên suốt bài thi (tiếng Việt)
-- weaknessesVi: điểm yếu lớn nhất cản trở lên band cao hơn (tiếng Việt)
-- overallFeedbackVi: nhận xét tổng thể chi tiết theo 5 tiêu chí OPIc (tiếng Việt)
-- studyPlanVi: 3 việc cụ thể bạn nên ôn trong tuần tới để tăng band (tiếng Việt)
+Return JSON matching the schema with holistic rating (NL..AL) and Vietnamese guidance.
 `;
 
   const response = await generateWithFallback(ai, {
@@ -235,10 +264,12 @@ Return JSON with:
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
+        required: ['finalLevel', 'averageScores', 'strengthsVi', 'weaknessesVi', 'overallFeedbackVi', 'studyPlanVi'],
         properties: {
           finalLevel: { type: Type.STRING },
           averageScores: {
             type: Type.OBJECT,
+            required: ['taskCompletion', 'fluency', 'pronunciation', 'grammar', 'vocabulary'],
             properties: {
               taskCompletion: { type: Type.INTEGER },
               fluency: { type: Type.INTEGER },
