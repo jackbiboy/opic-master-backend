@@ -1,4 +1,4 @@
-// ==================== BẢO MẬT PIN & TỰ ĐỘNG GỬI TOKEN ====================
+// ==================== BẢO MẬT PIN, KEEP-ALIVE & TỰ ĐỘNG GỬI TOKEN ====================
 const AUTH_TOKEN_KEY = 'opic_auth_token';
 const bootLoading = document.getElementById('bootLoading');
 const lockScreen = document.getElementById('lockScreen');
@@ -29,6 +29,17 @@ window.fetch = async (url, options = {}) => {
   }
   return res;
 };
+
+// Giữ Render thức trong lúc người dùng đang mở tab web ôn bài (không tốn token Gemini)
+function wakeUpServerInBackground() {
+  rawFetch('/api/health').catch(() => {});
+}
+
+setInterval(() => {
+  if (document.visibilityState === 'visible') {
+    wakeUpServerInBackground();
+  }
+}, 4 * 60 * 1000);
 
 function hideBootLoading() {
   if (bootLoading) bootLoading.classList.add('hidden');
@@ -199,6 +210,13 @@ const sampleAudioPlayer = document.getElementById('sampleAudioPlayer');
 const sampleTtsStatus = document.getElementById('sampleTtsStatus');
 const sampleExplainText = document.getElementById('sampleExplainText');
 
+// Tạo nút gửi chấm lại nếu mạng chập chờn (không phải nói lại)
+const btnRetryGrade = document.createElement('button');
+btnRetryGrade.className = 'btn-warning hidden';
+btnRetryGrade.textContent = '🔄 Gửi chấm lại bài vừa thu';
+btnRetryGrade.style.marginTop = '10px';
+recordStatus.insertAdjacentElement('afterend', btnRetryGrade);
+
 let allQuestions = [];
 let filteredQuestions = [];
 let currentCategory = '';
@@ -210,6 +228,7 @@ let practiceTimer;
 let currentAvaBlobUrl = null;
 let currentSampleBlobUrl = null;
 let lastSampleText = '';
+let lastPracticeBlob = null;
 
 async function loadQuestions() {
   try {
@@ -314,7 +333,6 @@ btnAvaSpeak.addEventListener('click', async () => {
     await avaAudioPlayer.play();
     ttsStatus.textContent = '🎧 Ava đang đọc...';
   } catch (err) {
-    // Tự động chuyển sang giọng trình duyệt nếu Microsoft Edge TTS bị lỗi (như 426)
     const ok = speakWithBrowserFallback(textToSpeak, rateSelect.value, () => {
       ttsStatus.textContent = '✅ Đã đọc xong (giọng dự phòng).';
     });
@@ -362,6 +380,10 @@ btnAvaReadSample.addEventListener('click', async () => {
 btnRecord.addEventListener('click', async () => {
   stopBrowserSpeech();
   avaAudioPlayer.pause();
+  btnRetryGrade.classList.add('hidden');
+  // Đánh thức server Render ngầm ngay lúc bắt đầu nói
+  wakeUpServerInBackground();
+
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const mimeType = getBestAudioMimeType();
@@ -402,22 +424,45 @@ btnStop.addEventListener('click', () => {
   recordStatus.textContent = '⏳ Đang chấm điểm & lưu vào lịch sử ngày...';
 });
 
-async function submitPracticeAudio(blob) {
-  const formData = new FormData();
-  formData.append('audio', blob, 'answer.webm');
-  formData.append('question', textInput.value);
-  formData.append('mode', currentMode);
-  formData.append('category', currentCategory);
-  formData.append('title', currentTitle);
+btnRetryGrade.addEventListener('click', async () => {
+  if (!lastPracticeBlob) return;
+  btnRetryGrade.classList.add('hidden');
+  recordStatus.textContent = '⏳ Đang gửi lại bài vừa thu để chấm điểm...';
+  await submitPracticeAudio(lastPracticeBlob);
+});
 
-  try {
-    const res = await fetch('/api/grade', { method: 'POST', body: formData });
-    const json = await res.json();
-    if (!res.ok || json.status !== 'success') throw new Error(json.message || json.error);
-    renderPracticeResult(json.data);
-    recordStatus.textContent = '🎉 Đã chấm xong và lưu vào Lịch sử hôm nay!';
-  } catch (err) {
-    recordStatus.textContent = '❌ Lỗi: ' + err.message;
+async function submitPracticeAudio(blob) {
+  lastPracticeBlob = blob;
+  btnRetryGrade.classList.add('hidden');
+
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const formData = new FormData();
+    formData.append('audio', blob, 'answer.webm');
+    formData.append('question', textInput.value);
+    formData.append('mode', currentMode);
+    formData.append('category', currentCategory);
+    formData.append('title', currentTitle);
+
+    try {
+      const res = await fetch('/api/grade', { method: 'POST', body: formData });
+      const json = await res.json();
+      if (!res.ok || json.status !== 'success') {
+        throw new Error(json.message || json.error || `HTTP ${res.status}`);
+      }
+      renderPracticeResult(json.data);
+      recordStatus.textContent = '🎉 Đã chấm xong và lưu vào Lịch sử hôm nay!';
+      return;
+    } catch (err) {
+      const isNetworkDrop = err.name === 'TypeError' || String(err.message).includes('Failed to fetch');
+      if (isNetworkDrop && attempt === 1) {
+        recordStatus.textContent = '⏳ Server vừa tỉnh dậy hoặc mạng hơi chập chờn, đang tự gửi lại lần 2...';
+        await new Promise(r => setTimeout(r, 3500));
+        continue;
+      }
+      recordStatus.textContent = '❌ Lỗi: ' + err.message;
+      btnRetryGrade.classList.remove('hidden');
+      return;
+    }
   }
 }
 
@@ -578,9 +623,7 @@ async function loadExamQuestion(index, questionObj) {
     avaExamAvatar.classList.add('speaking');
     document.getElementById('examAvaStatus').textContent = '⚠️ Dùng giọng dự phòng trên máy để đọc câu hỏi...';
     const ok = speakWithBrowserFallback(questionObj.question, '0%', finishExamAvaSpeaking);
-    if (!ok) {
-      finishExamAvaSpeaking();
-    }
+    if (!ok) finishExamAvaSpeaking();
   }
 }
 
@@ -606,6 +649,8 @@ btnExamShowText.addEventListener('click', () => examQuestionTextBox.classList.to
 btnExamRecord.addEventListener('click', async () => {
   stopBrowserSpeech();
   examAvaAudio.pause();
+  wakeUpServerInBackground();
+
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     examState.activeStream = stream;
