@@ -99,7 +99,7 @@ btnLockApp.addEventListener('click', () => {
   showLockScreen('Đã khóa màn hình.');
 });
 
-// ==================== TIỆN ÍCH CHUNG & CHUYỂN TAB ====================
+// ==================== TIỆN ÍCH CHUNG & GIỌNG DỰ PHÒNG ====================
 const SCORE_LABELS_SPEAK = {
   taskCompletion: 'Đáp ứng câu hỏi',
   fluency: 'Độ trôi chảy',
@@ -128,8 +128,43 @@ function getBestAudioMimeType() {
   return '';
 }
 
+function stopBrowserSpeech() {
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.cancel();
+  }
+}
+
+function speakWithBrowserFallback(text, rateStr = '0%', onEnd = null) {
+  if (!('speechSynthesis' in window)) {
+    if (onEnd) onEnd();
+    return false;
+  }
+
+  stopBrowserSpeech();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = 'en-US';
+  const rateDelta = parseInt(rateStr, 10) || 0;
+  utterance.rate = Math.max(0.6, Math.min(1.5, 1 + rateDelta / 100));
+
+  const voices = window.speechSynthesis.getVoices();
+  const preferred =
+    voices.find(v => v.lang.includes('en-US') && (v.name.includes('Ava') || v.name.includes('Natural'))) ||
+    voices.find(v => v.lang.includes('en-US')) ||
+    voices.find(v => v.lang.startsWith('en'));
+  if (preferred) utterance.voice = preferred;
+
+  if (onEnd) {
+    utterance.onend = onEnd;
+    utterance.onerror = onEnd;
+  }
+
+  window.speechSynthesis.speak(utterance);
+  return true;
+}
+
 document.querySelectorAll('.nav-btn').forEach(btn => {
   btn.addEventListener('click', () => {
+    stopBrowserSpeech();
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     const target = btn.dataset.view;
@@ -253,7 +288,7 @@ async function fetchAvaAudioBlob(text, voice = voiceSelect.value, rate = rateSel
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || 'Lỗi tạo giọng đọc Ava');
+    throw new Error(err.message || `HTTP ${res.status}`);
   }
   return await res.blob();
 }
@@ -264,6 +299,7 @@ btnAvaSpeak.addEventListener('click', async () => {
     ttsStatus.textContent = '⚠️ Vui lòng nhập văn bản tiếng Anh trước.';
     return;
   }
+  stopBrowserSpeech();
   btnAvaSpeak.disabled = true;
   ttsStatus.textContent = '⏳ Ava đang chuẩn bị giọng đọc...';
 
@@ -278,17 +314,23 @@ btnAvaSpeak.addEventListener('click', async () => {
     await avaAudioPlayer.play();
     ttsStatus.textContent = '🎧 Ava đang đọc...';
   } catch (err) {
-    ttsStatus.textContent = '❌ Lỗi giọng đọc Ava: ' + err.message;
+    // Tự động chuyển sang giọng trình duyệt nếu Microsoft Edge TTS bị lỗi (như 426)
+    const ok = speakWithBrowserFallback(textToSpeak, rateSelect.value, () => {
+      ttsStatus.textContent = '✅ Đã đọc xong (giọng dự phòng).';
+    });
+    ttsStatus.textContent = ok
+      ? `⚠️ Giọng Ava server tạm nghẽn (${err.message}), đang đọc bằng giọng dự phòng trên máy...`
+      : `❌ Lỗi giọng đọc Ava: ${err.message}`;
   } finally {
     btnAvaSpeak.disabled = false;
   }
 });
 
-// Đọc bài mẫu ngay tại khung kết quả (không nhảy cuộn lên đầu trang)
 btnAvaReadSample.addEventListener('click', async () => {
   const cleanSample = lastSampleText.replace(/[*\/]/g, '').trim();
   if (!cleanSample) return;
 
+  stopBrowserSpeech();
   btnAvaReadSample.disabled = true;
   if (sampleTtsStatus) sampleTtsStatus.textContent = '⏳ Ava đang chuẩn bị giọng đọc bài mẫu...';
 
@@ -304,13 +346,22 @@ btnAvaReadSample.addEventListener('click', async () => {
     }
     if (sampleTtsStatus) sampleTtsStatus.textContent = '🎧 Ava đang đọc bài mẫu...';
   } catch (err) {
-    if (sampleTtsStatus) sampleTtsStatus.textContent = '❌ Lỗi đọc bài mẫu: ' + err.message;
+    const ok = speakWithBrowserFallback(cleanSample, rateSelect.value, () => {
+      if (sampleTtsStatus) sampleTtsStatus.textContent = '✅ Đã đọc xong bài mẫu (giọng dự phòng).';
+    });
+    if (sampleTtsStatus) {
+      sampleTtsStatus.textContent = ok
+        ? `⚠️ Giọng Ava server tạm nghẽn (${err.message}), đang đọc bằng giọng dự phòng...`
+        : `❌ Lỗi đọc bài mẫu: ${err.message}`;
+    }
   } finally {
     btnAvaReadSample.disabled = false;
   }
 });
 
 btnRecord.addEventListener('click', async () => {
+  stopBrowserSpeech();
+  avaAudioPlayer.pause();
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const mimeType = getBestAudioMimeType();
@@ -431,6 +482,7 @@ let examState = {
   currentQuestion: null,
   replayLeft: 1,
   audioBlobUrl: null,
+  usingBrowserFallback: false,
   recorder: null,
   chunks: [],
   timer: null,
@@ -440,6 +492,14 @@ let examState = {
 function showExamStep(stepEl) {
   [surveyStep, examRoomStep, midTestStep, examResultStep].forEach(el => el.classList.add('hidden'));
   stepEl.classList.remove('hidden');
+}
+
+function finishExamAvaSpeaking() {
+  avaExamAvatar.classList.remove('speaking');
+  document.getElementById('examAvaStatus').textContent = 'Ava đã hỏi xong. Mời bạn trả lời!';
+  btnExamReplay.disabled = examState.replayLeft <= 0;
+  btnExamRecord.disabled = false;
+  examRecordStatus.textContent = '👉 Bấm "Bắt đầu trả lời" để thu âm.';
 }
 
 document.getElementById('btnStartMockExam').addEventListener('click', async () => {
@@ -485,9 +545,11 @@ document.getElementById('btnStartMockExam').addEventListener('click', async () =
 });
 
 async function loadExamQuestion(index, questionObj) {
+  stopBrowserSpeech();
   examState.currentIndex = index;
   examState.currentQuestion = questionObj;
   examState.replayLeft = 1;
+  examState.usingBrowserFallback = false;
 
   document.getElementById('examProgressLabel').textContent = `Câu ${index + 1} / ${examState.totalQuestions}`;
   document.getElementById('examProgressBar').style.width = `${((index + 1) / examState.totalQuestions) * 100}%`;
@@ -512,34 +574,38 @@ async function loadExamQuestion(index, questionObj) {
     document.getElementById('examAvaStatus').textContent = 'Ava đang đặt câu hỏi...';
     await examAvaAudio.play();
   } catch {
-    avaExamAvatar.classList.remove('speaking');
-    document.getElementById('examAvaStatus').textContent = '⚠️ Trình duyệt chặn tự phát âm thanh — bấm "Nghe lại" để nghe.';
-    btnExamReplay.disabled = false;
-    btnExamRecord.disabled = false;
+    examState.usingBrowserFallback = true;
+    avaExamAvatar.classList.add('speaking');
+    document.getElementById('examAvaStatus').textContent = '⚠️ Dùng giọng dự phòng trên máy để đọc câu hỏi...';
+    const ok = speakWithBrowserFallback(questionObj.question, '0%', finishExamAvaSpeaking);
+    if (!ok) {
+      finishExamAvaSpeaking();
+    }
   }
 }
 
-examAvaAudio.onended = () => {
-  avaExamAvatar.classList.remove('speaking');
-  document.getElementById('examAvaStatus').textContent = 'Ava đã hỏi xong. Mời bạn trả lời!';
-  btnExamReplay.disabled = examState.replayLeft <= 0;
-  btnExamRecord.disabled = false;
-  examRecordStatus.textContent = '👉 Bấm "Bắt đầu trả lời" để thu âm.';
-};
+examAvaAudio.onended = finishExamAvaSpeaking;
 
 btnExamReplay.addEventListener('click', async () => {
-  if (examState.replayLeft <= 0 || !examState.audioBlobUrl) return;
+  if (examState.replayLeft <= 0) return;
   examState.replayLeft -= 1;
   btnExamReplay.disabled = true;
   btnExamReplay.textContent = '🔁 Đã hết lượt nghe lại';
   avaExamAvatar.classList.add('speaking');
-  examAvaAudio.currentTime = 0;
-  await examAvaAudio.play();
+
+  if (examState.usingBrowserFallback || !examState.audioBlobUrl) {
+    speakWithBrowserFallback(examState.currentQuestion.question, '0%', finishExamAvaSpeaking);
+  } else {
+    examAvaAudio.currentTime = 0;
+    await examAvaAudio.play();
+  }
 });
 
 btnExamShowText.addEventListener('click', () => examQuestionTextBox.classList.toggle('hidden'));
 
 btnExamRecord.addEventListener('click', async () => {
+  stopBrowserSpeech();
+  examAvaAudio.pause();
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     examState.activeStream = stream;
@@ -588,6 +654,7 @@ btnExamNext.addEventListener('click', async () => {
   btnExamNext.disabled = true;
   btnExamRecord.disabled = true;
   examAvaAudio.pause();
+  stopBrowserSpeech();
 
   const audioBlob = await stopExamRecordingAndGetBlob();
   const formData = new FormData();
@@ -670,6 +737,7 @@ function renderFinalExamReport(record) {
 document.getElementById('btnExamAbort').addEventListener('click', () => {
   stopExamRecordingAndGetBlob();
   examAvaAudio.pause();
+  stopBrowserSpeech();
   showExamStep(surveyStep);
 });
 document.getElementById('btnNewMockExam').addEventListener('click', () => showExamStep(surveyStep));
